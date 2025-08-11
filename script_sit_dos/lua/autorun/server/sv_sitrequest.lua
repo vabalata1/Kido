@@ -1,33 +1,41 @@
 local antispam = {}
+local pendingRequests = {}
+local targetCooldown = {}
+
 util.AddNetworkString("SitRequest")
 util.AddNetworkString("SitResponse")
 
-local function CanPlayerRequestSit(ply, target)
-    if not antispam[ply] then
-        antispam[ply] = 0
+local function getTargetKey(ply)
+    return ply:SteamID64() or tostring(ply:UserID())
+end
+
+local function canPairCarry(requester, target)
+    if not IsValid(requester) or not requester:IsPlayer() then return false, "Demandeur invalide" end
+    if not IsValid(target) or not target:IsPlayer() then return false, "Cible invalide" end
+    if requester == target then return false, "Vous ne pouvez pas vous porter vous-même." end
+
+    if requester:GetPos():Distance(target:GetPos()) > 200 then
+        return false, "Vous devez être à moins de 200 unités de la personne."
     end
 
-    if antispam[ply] > CurTime() then
-        if not ply.NextSpamWarning or ply.NextSpamWarning < CurTime() then
-            ply:ChatPrint("Veuillez attendre avant de faire une autre demande.")
-            ply.NextSpamWarning = CurTime() + 1
-        end
-        return false
+    if requester:InVehicle() then
+        return false, "Vous êtes déjà assis."
     end
 
-    if ply.SurLeDos then
-        ply:ChatPrint("Vous portez déjà quelqu'un.")
-        return false
+    if target:InVehicle() then
+        return false, "La personne visée est déjà assise."
     end
 
-    if ply:GetPos():Distance(target:GetPos()) > 200 then
-        ply:ChatPrint("Vous devez être à moins de 200 unités de la personne.")
-        return false
+    if requester.SurLeDos then
+        return false, "Vous portez déjà quelqu'un."
     end
 
-    if ply:InVehicle() then
-        ply:ChatPrint("Vous êtes déjà assis.")
-        return false
+    if requester.isSitOnEnt then
+        return false, "Vous êtes déjà porté par quelqu'un."
+    end
+
+    if IsValid(target.SurLeDos) then
+        return false, "Cette personne porte déjà quelqu'un."
     end
 
     return true
@@ -89,124 +97,194 @@ local function ResetBones(ply)
     end
 end
 
+local function cleanupCarry(carrier)
+    if not IsValid(carrier) then return end
+    local chair = carrier.SurLeDos
+    if IsValid(chair) then
+        local passenger = chair:GetDriver()
+        if IsValid(passenger) and passenger:IsPlayer() then
+            passenger:ExitVehicle()
+            passenger.isSitOnEnt = false
+            ResetBones(passenger)
+            passenger:SetParent(nil)
+        end
+        chair:Remove()
+    end
+    carrier.SurLeDos = nil
+end
+
+local function registerRequest(requester, target)
+    local key = getTargetKey(target)
+    pendingRequests[key] = { requester = requester, expires = CurTime() + 10 }
+end
+
+local function popRequestIfValid(responder, requester)
+    local key = getTargetKey(responder)
+    local rec = pendingRequests[key]
+    if not rec then return false end
+    if rec.requester ~= requester then return false end
+    if rec.expires < CurTime() then pendingRequests[key] = nil return false end
+    pendingRequests[key] = nil
+    return true
+end
+
+local function hasActiveRequest(target)
+    local key = getTargetKey(target)
+    local rec = pendingRequests[key]
+    return rec ~= nil and rec.expires >= CurTime()
+end
+
+-- Envoi d'une demande sur G (serveur)
 hook.Add("PlayerButtonDown", "PlayerButtonDown::AssitSurLaPersonne", function(ply, button)
-    if button == KEY_G then
-        local ent = ply:GetEyeTrace().Entity
-        if ent and ent:IsPlayer() and CanPlayerRequestSit(ply, ent) then
-            net.Start("SitRequest")
-            net.WriteEntity(ply)
-            net.Send(ent)
-            antispam[ply] = CurTime() + 10
-        end
-    end
-end)
+    if button ~= KEY_G then return end
 
-net.Receive("SitResponse", function(len, ply)
-    local requester = net.ReadEntity()
-    local response = net.ReadBool()
+    local ent = ply:GetEyeTrace().Entity
+    if not (IsValid(ent) and ent:IsPlayer()) then return end
 
-    if IsValid(requester) and requester:IsPlayer() then
-        if response then
-            if requester:InVehicle() then
-                ply:ChatPrint("La personne que vous essayez de porter est déjà assise.")
-                return
-            end
-
-            if IsValid(ply.SurLeDos) then
-                --ply.SurLeDos:Remove()
-            end
-
-            local pos = ply:GetPos()
-            local chair = ents.Create("prop_vehicle_prisoner_pod")
-            chair:SetModel("models/nova/jeep_seat.mdl")
-            chair:SetKeyValue("vehiclescript", "scripts/vehicles/prisoner_pod.txt")
-            chair:SetKeyValue("limitview", 0)
-            local ang = ply:GetAngles()
-            ang:RotateAroundAxis(ang:Up(), -90)
-            chair:SetAngles(ang)
-            chair:SetPos(pos)
-            requester:SetParent(chair)
-
-            chair:Spawn()
-            chair:Activate()
-            chair:SetColor(Color(255, 255, 255, 0))
-            chair:SetRenderMode(RENDERMODE_TRANSALPHA)
-            chair:DrawShadow(false)
-            chair:SetSolid(SOLID_NONE)
-            chair:SetParent(ply)
-            ply.SurLeDos = chair
-            requester.isSitOnEnt = true
-            ply.SurLeDos:SetPos(Vector(0, 0, 40))
-
-            hook.Run("SitPositionThink", requester, ply)
-
-            timer.Simple(0.2, function()
-                requester:EnterVehicle(chair)
-
-                -- Adjust bones after player has entered the vehicle
-                local FT = FrameTime()
-                local ang1 = requester:GetNWFloat("ang1")
-                requester:SetNWFloat("ang1", Lerp(FT * 15, ang1, 1))
-                ManipulateBones(requester, ang1)
-            end)
-
-        else
-            requester:ChatPrint("Votre demande d'assise a été rejetée.")
-        end
-    end
-end)
-
-hook.Add("SitPositionThink", "SitPositionThinks", function(ply, ent)
-    if not ply.isSitOnEnt then
-        if IsValid(ent.SurLeDos) then
-            ent.SurLeDos:Remove()
+    if not antispam[ply] then antispam[ply] = 0 end
+    if antispam[ply] > CurTime() then
+        if not ply.NextSpamWarning or ply.NextSpamWarning < CurTime() then
+            ply:ChatPrint("Veuillez attendre avant de faire une autre demande.")
+            ply.NextSpamWarning = CurTime() + 1
         end
         return
     end
 
-    if IsValid(ent.SurLeDos) then
-        ent.SurLeDos:SetLocalAngles(Angle(ent:GetAngles().p, ent:GetAngles().y + 270, ent:GetAngles().r))
+    if hasActiveRequest(ent) then
+        ply:ChatPrint("Cette personne a déjà une demande en attente.")
+        return
     end
 
-    timer.Simple(0.1, function()
-        if IsValid(ply) and IsValid(ent) then
-            hook.Run("SitPositionThink", ply, ent)
-        end
+    local ok, reason = canPairCarry(ply, ent)
+    if not ok then
+        if reason then ply:ChatPrint(reason) end
+        return
+    end
+
+    net.Start("SitRequest")
+    net.WriteEntity(ply)
+    net.Send(ent)
+
+    registerRequest(ply, ent)
+    antispam[ply] = CurTime() + 10
+end)
+
+net.Receive("SitResponse", function(_, responder)
+    local requester = net.ReadEntity()
+    local isAccepted = net.ReadBool()
+
+    if not (IsValid(requester) and requester:IsPlayer()) then return end
+    if not (IsValid(responder) and responder:IsPlayer()) then return end
+
+    -- Vérifier qu'il y avait bien une demande en attente
+    if not popRequestIfValid(responder, requester) then
+        responder:ChatPrint("Aucune demande valide à répondre.")
+        return
+    end
+
+    if not isAccepted then
+        if IsValid(requester) then requester:ChatPrint("Votre demande d'assise a été rejetée.") end
+        return
+    end
+
+    -- Re-vérifier les conditions au moment de l'acceptation
+    local ok, reason = canPairCarry(requester, responder)
+    if not ok then
+        if reason then requester:ChatPrint("Impossible: " .. reason) end
+        return
+    end
+
+    -- Créer et configurer le siège parenté au porteur (responder)
+    local chair = ents.Create("prop_vehicle_prisoner_pod")
+    if not IsValid(chair) then return end
+
+    chair:SetModel("models/nova/jeep_seat.mdl")
+    chair:SetKeyValue("vehiclescript", "scripts/vehicles/prisoner_pod.txt")
+    chair:SetKeyValue("limitview", 0)
+
+    -- Spawn avant parent? On peut spawner puis parent, puis définir offsets locaux
+    chair:Spawn()
+    chair:Activate()
+
+    chair:SetColor(Color(255, 255, 255, 0))
+    chair:SetRenderMode(RENDERMODE_TRANSALPHA)
+    chair:DrawShadow(false)
+    chair:SetSolid(SOLID_NONE)
+    chair:SetCollisionGroup(COLLISION_GROUP_IN_VEHICLE)
+
+    chair:SetParent(responder)
+    responder.SurLeDos = chair
+
+    -- Offset local derrière/au-dessus du porteur (ajuster si besoin)
+    chair:SetLocalPos(Vector(0, -18, 40))
+    chair:SetLocalAngles(Angle(0, 270, 0))
+
+    -- Faire entrer le demandeur dans le siège
+    timer.Simple(0.05, function()
+        if not (IsValid(requester) and IsValid(chair)) then return end
+        requester:EnterVehicle(chair)
+        requester.isSitOnEnt = true
+        ManipulateBones(requester, 1)
     end)
 end)
 
-hook.Add("PlayerLeaveVehicle", "PlayerLeaveVehicleTurnOn", function(ply, veh)
-    ply.isSitOnEnt = false
-    local FT = FrameTime()
-
-    local ang1 = ply:GetNWFloat("ang1")
-    local ang2 = ply:GetNWFloat("ang2")
-    local pos1 = ply:GetNWFloat("pos1")
-    local pos2 = ply:GetNWFloat("pos2")
-
-    ply:SetNWFloat("ang1", Lerp(FT * 5, ang1, 0))
-    ply:SetNWFloat("ang2", Lerp(FT * 5, ang2, 0))
-    ply:SetNWFloat("pos1", Lerp(FT * 5, ang1, 0))
-    ply:SetNWFloat("pos2", Lerp(FT * 5, ang2, 0))
-
-    if IsValid(ply) and ply:IsPlayer() then
+-- Nettoyage quand le joueur quitte un véhicule
+hook.Add("PlayerLeaveVehicle", "PlayerLeaveVehicleTurnOn_Fixed", function(ply, veh)
+    if not IsValid(veh) then return end
+    local carrier = veh:GetParent()
+    if IsValid(carrier) and carrier:IsPlayer() and carrier.SurLeDos == veh then
+        cleanupCarry(carrier)
+    else
+        -- Si ce n'est pas notre siège, au moins reset les os si besoin
         ResetBones(ply)
+        ply.isSitOnEnt = false
     end
     ply:SetViewEntity(ply)
 end)
 
-hook.Add("PlayerDeath", "PlayerDeath::DropCarriedPlayer", function(victim, inflictor, attacker)
+-- Nettoyage au décès
+hook.Add("PlayerDeath", "PlayerDeath::DropCarriedPlayer_Fixed", function(victim)
+    -- Si le porteur meurt
     if IsValid(victim.SurLeDos) then
-        local chair = victim.SurLeDos
-        local carriedPlayer = chair:GetParent()
-        
-        if IsValid(carriedPlayer) and carriedPlayer:IsPlayer() then
-            carriedPlayer:ExitVehicle()
-            carriedPlayer:SetParent(nil)
-            carriedPlayer.isSitOnEnt = false
-            ResetBones(carriedPlayer)
-        end
-        
-        chair:Remove()
+        cleanupCarry(victim)
+        return
     end
+
+    -- Si le porté meurt
+    if victim:InVehicle() then
+        local veh = victim:GetVehicle()
+        if IsValid(veh) then
+            local carrier = veh:GetParent()
+            if IsValid(carrier) and carrier:IsPlayer() and carrier.SurLeDos == veh then
+                cleanupCarry(carrier)
+            else
+                ResetBones(victim)
+                victim.isSitOnEnt = false
+                victim:SetParent(nil)
+                if IsValid(veh) then veh:Remove() end
+            end
+        end
+    end
+end)
+
+-- Nettoyage à la déconnexion
+hook.Add("PlayerDisconnected", "PlayerDisconnected::CleanupCarry", function(ply)
+    if IsValid(ply.SurLeDos) then
+        cleanupCarry(ply)
+    end
+
+    -- Si c'était un porté dans un siège parenté
+    if ply:InVehicle() then
+        local veh = ply:GetVehicle()
+        if IsValid(veh) then
+            local carrier = veh:GetParent()
+            if IsValid(carrier) and carrier:IsPlayer() and carrier.SurLeDos == veh then
+                cleanupCarry(carrier)
+            end
+        end
+    end
+
+    -- Annuler une éventuelle demande en attente le concernant
+    local key = getTargetKey(ply)
+    pendingRequests[key] = nil
 end)
