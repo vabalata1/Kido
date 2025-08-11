@@ -1,9 +1,17 @@
 surface.CreateFont("Hayden:Sit", {
-    font = "Blood Crow",
+    font = (system.IsLinux() or system.IsWindows()) and "Trebuchet24" or "Blood Crow",
     size = 24,
     antialias = true,
     shadow = false
 })
+
+local function materialSafe(path)
+    local mat = Material(path)
+    if mat:IsError() then
+        return nil
+    end
+    return mat
+end
 
 net.Receive("SitRequest", function()
     local requester = net.ReadEntity()
@@ -12,14 +20,21 @@ net.Receive("SitRequest", function()
 
     local Frame = vgui.Create("DFrame")
     Frame:SetTitle("")
-    Frame:SetSize(350, 200)  -- Augmenter la taille de la fenêtre
+    Frame:SetSize(350, 200)
     Frame:Center()
     Frame:MakePopup()
-    Frame:ShowCloseButton(false) -- Désactiver la croix de base
+    Frame:ShowCloseButton(false)
+
+    local bgMat = materialSafe("fondderma.png")
     Frame.Paint = function(self, w, h)
-        surface.SetDrawColor(255, 255, 255, 255)
-        surface.SetMaterial(Material("fondderma.png"))
-        surface.DrawTexturedRect(0, 0, w, h)
+        if bgMat then
+            surface.SetDrawColor(255, 255, 255, 255)
+            surface.SetMaterial(bgMat)
+            surface.DrawTexturedRect(0, 0, w, h)
+        else
+            surface.SetDrawColor(20, 20, 20, 240)
+            surface.DrawRect(0, 0, w, h)
+        end
     end
 
     local CloseButton = vgui.Create("DButton", Frame)
@@ -29,10 +44,18 @@ net.Receive("SitRequest", function()
     CloseButton.DoClick = function()
         Frame:Close()
     end
+
+    local crossMat = materialSafe("cross.png")
     CloseButton.Paint = function(self, w, h)
-        surface.SetDrawColor(255, 255, 255, 255)
-        surface.SetMaterial(Material("cross.png"))
-        surface.DrawTexturedRect(0, 0, w, h)
+        if crossMat then
+            surface.SetDrawColor(255, 255, 255, 255)
+            surface.SetMaterial(crossMat)
+            surface.DrawTexturedRect(0, 0, w, h)
+        else
+            surface.SetDrawColor(200, 60, 60, 255)
+            surface.DrawRect(0, 0, w, h)
+            draw.SimpleText("X", "Hayden:Sit", w / 2, h / 2, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        end
     end
 
     local PseudoLabel = vgui.Create("DLabel", Frame)
@@ -41,7 +64,7 @@ net.Receive("SitRequest", function()
     PseudoLabel:SetText(requester:Nick())
     PseudoLabel:SetFont("Hayden:Sit")
     PseudoLabel:SetTextColor(Color(255, 255, 255))
-    PseudoLabel:SetContentAlignment(5) -- Centrer le texte
+    PseudoLabel:SetContentAlignment(5)
 
     local TextLabel = vgui.Create("DLabel", Frame)
     TextLabel:SetPos(10, 70)
@@ -49,7 +72,7 @@ net.Receive("SitRequest", function()
     TextLabel:SetText("veut s'asseoir sur votre dos.")
     TextLabel:SetFont("Hayden:Sit")
     TextLabel:SetTextColor(Color(255, 255, 255))
-    TextLabel:SetContentAlignment(5) -- Centrer le texte
+    TextLabel:SetContentAlignment(5)
 
     local AcceptButton = vgui.Create("DButton", Frame)
     AcceptButton:SetPos(50, 120)
@@ -62,10 +85,17 @@ net.Receive("SitRequest", function()
         net.SendToServer()
         Frame:Close()
     end
+
+    local btnMat = materialSafe("button.png")
     AcceptButton.Paint = function(self, w, h)
-        surface.SetDrawColor(255, 255, 255, 255)
-        surface.SetMaterial(Material("button.png"))
-        surface.DrawTexturedRect(0, 0, w, h)
+        if btnMat then
+            surface.SetDrawColor(255, 255, 255, 255)
+            surface.SetMaterial(btnMat)
+            surface.DrawTexturedRect(0, 0, w, h)
+        else
+            surface.SetDrawColor(60, 160, 80, 255)
+            surface.DrawRect(0, 0, w, h)
+        end
         draw.SimpleText("Accepter", "Hayden:Sit", w / 2, h / 2, Color(255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     end
 
@@ -81,9 +111,24 @@ net.Receive("SitRequest", function()
         Frame:Close()
     end
     RejectButton.Paint = function(self, w, h)
-        surface.SetDrawColor(255, 255, 255, 255)
-        surface.SetMaterial(Material("button.png"))
-        surface.DrawTexturedRect(0, 0, w, h)
+        if btnMat then
+            surface.SetDrawColor(255, 255, 255, 255)
+            surface.SetMaterial(btnMat)
+            surface.DrawTexturedRect(0, 0, w, h)
+        else
+            surface.SetDrawColor(160, 60, 60, 255)
+            surface.DrawRect(0, 0, w, h)
+        end
         draw.SimpleText("Refuser", "Hayden:Sit", w / 2, h / 2, Color(255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     end
+
+    -- Timeout auto après 10 secondes => refus
+    timer.Simple(10, function()
+        if not IsValid(Frame) then return end
+        net.Start("SitResponse")
+        net.WriteEntity(requester)
+        net.WriteBool(false)
+        net.SendToServer()
+        if IsValid(Frame) then Frame:Close() end
+    end)
 end)
