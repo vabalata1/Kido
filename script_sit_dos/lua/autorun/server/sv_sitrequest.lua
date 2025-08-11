@@ -1,6 +1,7 @@
 local antispam = {}
 local pendingRequests = {}
 local targetCooldown = {}
+local activeSeats = {}
 
 util.AddNetworkString("SitRequest")
 util.AddNetworkString("SitResponse")
@@ -108,9 +109,11 @@ local function cleanupCarry(carrier)
             ResetBones(passenger)
             passenger:SetParent(nil)
         end
+        chair.carrier = nil
         chair:Remove()
     end
     carrier.SurLeDos = nil
+    activeSeats[carrier] = nil
 end
 
 local function registerRequest(requester, target)
@@ -194,7 +197,7 @@ net.Receive("SitResponse", function(_, responder)
         return
     end
 
-    -- Créer et configurer le siège parenté au porteur (responder)
+    -- Créer et configurer le siège (non parenté, suivi manuel pour corriger l'orientation)
     local chair = ents.Create("prop_vehicle_prisoner_pod")
     if not IsValid(chair) then return end
 
@@ -202,7 +205,6 @@ net.Receive("SitResponse", function(_, responder)
     chair:SetKeyValue("vehiclescript", "scripts/vehicles/prisoner_pod.txt")
     chair:SetKeyValue("limitview", 0)
 
-    -- Spawn avant parent? On peut spawner puis parent, puis définir offsets locaux
     chair:Spawn()
     chair:Activate()
 
@@ -212,12 +214,14 @@ net.Receive("SitResponse", function(_, responder)
     chair:SetSolid(SOLID_NONE)
     chair:SetCollisionGroup(COLLISION_GROUP_IN_VEHICLE)
 
-    chair:SetParent(responder)
     responder.SurLeDos = chair
+    chair.carrier = responder
+    activeSeats[responder] = chair
 
-    -- Offset local derrière/au-dessus du porteur (ajuster si besoin)
-    chair:SetLocalPos(Vector(0, -18, 40))
-    chair:SetLocalAngles(Angle(0, 270, 0))
+    local offsetPos = Vector(0, -18, 40)
+    local offsetAng = Angle(0, 270, 0)
+    chair:SetPos(responder:LocalToWorld(offsetPos))
+    chair:SetAngles(responder:LocalToWorldAngles(offsetAng))
 
     -- Faire entrer le demandeur dans le siège
     timer.Simple(0.05, function()
@@ -228,10 +232,24 @@ net.Receive("SitResponse", function(_, responder)
     end)
 end)
 
+-- Mise à jour de la position/orientation du siège pour suivre le porteur
+hook.Add("Think", "SitDos_UpdateSeatTransform", function()
+    for carrier, seat in pairs(activeSeats) do
+        if IsValid(carrier) and IsValid(seat) then
+            local offsetPos = Vector(0, -18, 40)
+            local offsetAng = Angle(0, 270, 0)
+            seat:SetPos(carrier:LocalToWorld(offsetPos))
+            seat:SetAngles(carrier:LocalToWorldAngles(offsetAng))
+        else
+            activeSeats[carrier] = nil
+        end
+    end
+end)
+
 -- Nettoyage quand le joueur quitte un véhicule
 hook.Add("PlayerLeaveVehicle", "PlayerLeaveVehicleTurnOn_Fixed", function(ply, veh)
     if not IsValid(veh) then return end
-    local carrier = veh:GetParent()
+    local carrier = veh.carrier
     if IsValid(carrier) and carrier:IsPlayer() and carrier.SurLeDos == veh then
         cleanupCarry(carrier)
     else
@@ -254,7 +272,7 @@ hook.Add("PlayerDeath", "PlayerDeath::DropCarriedPlayer_Fixed", function(victim)
     if victim:InVehicle() then
         local veh = victim:GetVehicle()
         if IsValid(veh) then
-            local carrier = veh:GetParent()
+            local carrier = veh.carrier
             if IsValid(carrier) and carrier:IsPlayer() and carrier.SurLeDos == veh then
                 cleanupCarry(carrier)
             else
@@ -273,11 +291,11 @@ hook.Add("PlayerDisconnected", "PlayerDisconnected::CleanupCarry", function(ply)
         cleanupCarry(ply)
     end
 
-    -- Si c'était un porté dans un siège parenté
+    -- Si c'était un porté dans un siège suivi
     if ply:InVehicle() then
         local veh = ply:GetVehicle()
         if IsValid(veh) then
-            local carrier = veh:GetParent()
+            local carrier = veh.carrier
             if IsValid(carrier) and carrier:IsPlayer() and carrier.SurLeDos == veh then
                 cleanupCarry(carrier)
             end
