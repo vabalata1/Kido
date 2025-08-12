@@ -155,6 +155,7 @@ function ENT:AppliquerCollisionDome(ply)
     if not IsValid(ply) or not ply:Alive() then return end
     if not self.dome or not self.dome.actif then return end
     if ply:GetMoveType() == MOVETYPE_NOCLIP then return end
+    if self.dome.owner and IsValid(self.dome.owner) and ply == self.dome.owner then return end
 
     local centre = self.dome.pos
     local positionJoueur = ply:GetPos()
