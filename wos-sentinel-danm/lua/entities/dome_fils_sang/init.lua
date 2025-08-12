@@ -150,9 +150,52 @@ function ENT:CommencerSaignement(ply)
     TickSaignement()
 end
 
+-- Physique: collision sphérique dure du dôme
+function ENT:AppliquerCollisionDome(ply)
+    if not IsValid(ply) or not ply:Alive() then return end
+    if not self.dome or not self.dome.actif then return end
+    if ply:GetMoveType() == MOVETYPE_NOCLIP then return end
+
+    local centre = self.dome.pos
+    local positionJoueur = ply:GetPos()
+    local vecteurCentreVersJoueur = positionJoueur - centre
+    local distance = vecteurCentreVersJoueur:Length()
+    if distance <= 0.001 then return end
+
+    local direction = vecteurCentreVersJoueur:GetNormalized()
+
+    -- Rayon autorisé légèrement réduit pour tenir compte du gabarit du joueur (~16u)
+    local rayonAutorise = math.max(0, (DOME_CONFIG.RAYON or 0) - 16)
+
+    -- Si dehors, on re-téléporte juste à l'intérieur et on annule la vitesse radiale sortante
+    if distance > rayonAutorise then
+        local nouvellePos = centre + direction * rayonAutorise
+        ply:SetPos(nouvellePos)
+
+        local vitesse = ply:GetVelocity()
+        local vitesseRadiale = vitesse:Dot(direction)
+        if vitesseRadiale > 0 then
+            -- SetVelocity ajoute une impulsion; on applique l'opposé pour annuler la composante sortante
+            ply:SetVelocity(-direction * (vitesseRadiale + 50))
+        end
+        return
+    end
+
+    -- Si très proche de la bordure et en train d'aller vers l'extérieur, on annule l'élan sortant
+    if distance > (rayonAutorise - 8) then
+        local vitesse = ply:GetVelocity()
+        local vitesseRadiale = vitesse:Dot(direction)
+        if vitesseRadiale > 0 then
+            local correction = math.min(vitesseRadiale + 50, 300)
+            ply:SetVelocity(-direction * correction)
+        end
+    end
+end
+
 function ENT:GererJoueurDansDome(ply)
     if not IsValid(ply) or not self.dome or not self.dome.actif then return end
     if self.dome.owner and IsValid(self.dome.owner) and ply == self.dome.owner then
+        -- Le propriétaire est exempté des debuffs/saignements, mais reste confiné par la collision dans AppliquerCollisionDome
         return
     end
     local dist = ply:GetPos():Distance(self.dome.pos)
@@ -176,11 +219,7 @@ function ENT:GererJoueurDansDome(ply)
                 self:CommencerSaignement(ply)
             end
         end
-        if dist > DOME_CONFIG.RAYON * 0.9 then
-            local direction = (self.dome.pos - ply:GetPos()):GetNormalized()
-            local force = (DOME_CONFIG.RAYON - dist) * 10
-            ply:SetVelocity(direction * force)
-        end
+        -- Suppression de l'ancienne répulsion; la collision est gérée par AppliquerCollisionDome
     else
         if data.marque then
             data.marque = false
@@ -191,11 +230,7 @@ function ENT:GererJoueurDansDome(ply)
             end
             data.ralenti = false
         end
-        if dist < DOME_CONFIG.RAYON * 1.1 then
-            local direction = (ply:GetPos() - self.dome.pos):GetNormalized()
-            local force = (DOME_CONFIG.RAYON * 1.1 - dist) * 15
-            ply:SetVelocity(direction * force)
-        end
+        -- Plus de poussée vers l'intérieur; AppliquerCollisionDome se charge de ramener le joueur
     end
 end
 
@@ -205,6 +240,9 @@ function ENT:Think()
             self:FermerCage()
         else
             for _, ply in ipairs(player.GetAll()) do
+                -- D'abord, appliquer la collision dure du dôme
+                self:AppliquerCollisionDome(ply)
+                -- Puis, gérer les effets du dôme (debuffs/saignement) si applicable
                 self:GererJoueurDansDome(ply)
             end
         end
