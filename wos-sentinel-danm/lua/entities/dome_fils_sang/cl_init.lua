@@ -21,6 +21,7 @@ net.Receive("ActivationDomeFilsDeSang", function()
     local expandStart = net.ReadFloat()
     local expandTime = net.ReadFloat()
     local contractTime = net.ReadFloat()
+    local duree = net.ReadFloat()
 
     table.insert(ActiveDomes, {
         pos = pos,
@@ -28,7 +29,7 @@ net.Receive("ActivationDomeFilsDeSang", function()
         expandStart = expandStart,
         expandTime = expandTime,
         contractTime = contractTime,
-        endTime = CurTime() + (DOME_CONFIG.DUREE or 10),
+        endTime = CurTime() + (duree or DOME_CONFIG.DUREE or 10),
     })
 end)
 
