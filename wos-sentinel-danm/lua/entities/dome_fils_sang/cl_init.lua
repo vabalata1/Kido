@@ -3,11 +3,11 @@ include('shared.lua')
 local DOME_CONFIG = {
     RAYON = 800,
     DUREE = 10,
-    EXPANSION = 0.5,
+    EXPANSION = 0.1,
     CONTRACTION = 0.5,
     RALENTISSEMENT = 0.9,
-    DEGATS_MIN = 100,
-    DEGATS_MAX = 150
+    DEGATS_MIN = 50,
+    DEGATS_MAX = 75
 }
 
 local clientDome = {
