@@ -669,8 +669,16 @@ function Pointshop2Controller:moduleItemsChanged( outfitsChanged )
 		end
 		
 		outfitsLoadedPromise = self:loadOutfits( ):Then(function()
-			for k, v in pairs(player.GetAll()) do
-				Pointshop2Controller:getInstance( ):SendInitialOutfitPackage( v )
+			local recipients = player.GetAll()
+			local batchSize = GetConVar and GetConVar("ps2_batch_size") and math.max(1, GetConVar("ps2_batch_size"):GetInt()) or 16
+			for i = 1, #recipients, batchSize do
+				local batch = {}
+				for j = i, math.min(i + batchSize - 1, #recipients) do
+					batch[#batch + 1] = recipients[j]
+				end
+				for _, v in ipairs(batch) do
+					Pointshop2Controller:getInstance( ):SendInitialOutfitPackage( v )
+				end
 			end
 		end)
 	end
