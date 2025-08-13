@@ -586,16 +586,23 @@ function Pointshop2Controller:notifyItemsChanged( itemClassNames, outfitsChanged
 		if outfitsChanged then
 			return outfitsLoadedPromise:Then( function( )
 				-- Send info to players as soon as they received the outfits change
-				return Promise.Map( player.GetAll( ), function( ply ) 
-					return ply.outfitsReceivedPromise:Then( function()
-						self:startView( "Pointshop2View", "updateItemPersistences", ply, updatedPersistences )
-					end )
-				end )
+				local recipients = player.GetAll()
+				ps2_ForEachBatch(recipients, 16, function(batch)
+					for _, ply in ipairs(batch) do
+						ply.outfitsReceivedPromise:Then(function()
+							self:startView("Pointshop2View", "updateItemPersistences", ply, updatedPersistences)
+						end)
+					end
+				end)
+				return Promise.Resolve()
 			end )
 		end
 
 		-- send straight away if no outfit changes
-		self:startView( "Pointshop2View", "updateItemPersistences", player.GetAll(), updatedPersistences )
+		local recipients = player.GetAll()
+		ps2_ForEachBatch(recipients, 16, function(batch)
+			self:startView("Pointshop2View", "updateItemPersistences", batch, updatedPersistences)
+		end)
 	end )
 end
 
@@ -662,18 +669,21 @@ function Pointshop2Controller:moduleItemsChanged( outfitsChanged )
 		return self:loadDynamicInfo( )
 	end )
 	:Done( function( )
-		for k, v in pairs( player.GetAll( ) ) do
-			Promise.Resolve( )
-			:Then( function( )
-				if outfitsChanged == false then
-					return Promise.Resolve( )
-				end
-				return v.outfitsReceivedPromise
-			end )
-			:Done( function( )
-				self:sendDynamicInfo( v )
-			end )
-		end
+		local recipients = player.GetAll()
+		ps2_ForEachBatch(recipients, 16, function(batch)
+			for _, v in ipairs(batch) do
+				Promise.Resolve( )
+				:Then( function( )
+					if outfitsChanged == false then
+						return Promise.Resolve( )
+					end
+					return v.outfitsReceivedPromise
+				end )
+				:Done( function( )
+					self:sendDynamicInfo( v )
+				end )
+			end
+		end)
 	end )
 end
 
