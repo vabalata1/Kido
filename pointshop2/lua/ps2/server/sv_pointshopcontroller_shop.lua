@@ -440,7 +440,15 @@ function Pointshop2Controller:equipItem( ply, itemId, slotName )
 			if item.class:IsValidForServer( Pointshop2.GetCurrentServerId( ) ) then
 				item:OnEquip(  )
 				hook.Run( "PS2_EquipItem", ply, item.id, slotsused )
-				self:startView( "Pointshop2View", "playerEquipItem", player.GetAll( ), ply.kPlayerId, item )
+				local recipients = player.GetAll()
+				local batchSize = 16
+				for i = 1, #recipients, batchSize do
+					local batch = {}
+					for j = i, math.min(i + batchSize - 1, #recipients) do
+						batch[#batch + 1] = recipients[j]
+					end
+					self:startView( "Pointshop2View", "playerEquipItem", batch, ply.kPlayerId, item )
+				end
 			end
 		end )
 
