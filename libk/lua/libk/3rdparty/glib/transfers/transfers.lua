@@ -14,6 +14,8 @@ if SERVER then
 	util.AddNetworkString ("glib_transfer")
 	util.AddNetworkString ("glib_transfer_request")
 	util.AddNetworkString ("glib_transfer_request_response")
+	CreateConVar("libk_transfer_chunk", "16384", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "GLib transfer chunk size in bytes")
+	CreateConVar("libk_transfer_delay_ms", "0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Delay in milliseconds between sending GLib transfer chunks")
 end
 
 local function EndPacket (packet, userId)
@@ -228,6 +230,14 @@ timer.Create ("GLib.Transfers", 1, 0,
 			else
 				local outBuffer = GLib.StringOutBuffer ()
 
+				-- Apply configurable chunk size before serializing the next chunk
+				if SERVER then
+					local cs = GetConVar("libk_transfer_chunk"):GetInt()
+					if cs and cs > 0 then
+						pcall(function() outboundTransfer:SetChunkSize(cs) end)
+					end
+				end
+
 				local packet = vnet.CreatePacket("glib_transfer")
 					if not outboundTransfer:IsStarted () then
 						packet:Int(1)
@@ -241,6 +251,16 @@ timer.Create ("GLib.Transfers", 1, 0,
 					end
 					packet:String (outBuffer:GetString ())
 				EndPacket(packet, outboundTransfer:GetDestinationId ())
+
+				-- Optional per-chunk delay to smooth bandwidth spikes
+				if SERVER then
+					local dms = GetConVar("libk_transfer_delay_ms"):GetInt()
+					if dms and dms > 0 then
+						local sleep = dms / 1000
+						local t = SysTime() + sleep
+						while SysTime() < t do end
+					end
+				end
 
 				if outboundTransfer:IsFinished () then
 					GLib.Transfers.OutboundTransfers [outboundTransfer:GetDestinationId () .. "/" .. outboundTransfer:GetId ()] = nil

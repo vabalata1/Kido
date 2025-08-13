@@ -375,3 +375,17 @@ function LibK.getDatabaseConnection( config, name )
 
 	return DB
 end
+
+CreateConVar("libk_sql_log", "0", {FCVAR_ARCHIVE}, "Log SQL queries to console (debug only)")
+
+function DB:SetLogSQL(enabled)
+	LibK.LogSQL = enabled and true or false
+end
+
+-- initialize logging flag based on convar
+if GetConVar and GetConVar("libk_sql_log") then
+	LibK.LogSQL = GetConVar("libk_sql_log"):GetBool()
+	cvars.AddChangeCallback("libk_sql_log", function(_, _, _)
+		LibK.LogSQL = GetConVar("libk_sql_log"):GetBool()
+	end, "LibKSqlLogToggle")
+end

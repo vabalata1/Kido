@@ -22,6 +22,11 @@ end
 
 
 if SERVER then
+	CreateConVar("libk_debug", "0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Enable LibK verbose debug logs")
+	hook.Add("Initialize", "LibK_SetDebugFlag", function()
+		LibK.Debug = GetConVar("libk_debug"):GetBool()
+	end)
+	cvars.AddChangeCallback("libk_debug", function(_, _, _) LibK.Debug = GetConVar("libk_debug"):GetBool() end, "LibKDebugToggle")
 	util.AddNetworkString( "KRELOAD" )
 	concommand.Add( "libk_reload", function( ply, cmd, args )
 		if not LibK.Debug or ( ply:IsValid( ) and not ply:IsAdmin( ) ) then
