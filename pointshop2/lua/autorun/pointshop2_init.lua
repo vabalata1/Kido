@@ -18,13 +18,23 @@ local function addCsLuaRecursive( folder )
 	end
 end
 addCsLuaRecursive( "ps2/modules" )
-LibK.AddCSLuaDir( "kinv/items" )
 
+-- Ensure LibK is loaded before using it
 if not LibK then
+	if SERVER then AddCSLuaFile("libk/autorun/_libk_loader.lua") end
 	if file.Exists("libk/autorun/_libk_loader.lua", "LUA") then
 		include("libk/autorun/_libk_loader.lua")
 	end
 end
+
+-- If LibK is still not available, abort init with a readable error
+if not LibK then
+	ErrorNoHalt("[Pointshop2] LibK is missing or failed to load. Ensure the LibK addon is installed and enabled.\n")
+	return
+end
+
+-- Now safe to use LibK helpers
+LibK.AddCSLuaDir( "kinv/items" )
 
 LibK.InitializeAddon{
 	addonName = "Pointshop2",             --Name of the addon
