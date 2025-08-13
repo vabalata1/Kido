@@ -14,8 +14,6 @@ if SERVER then
 	util.AddNetworkString ("glib_transfer")
 	util.AddNetworkString ("glib_transfer_request")
 	util.AddNetworkString ("glib_transfer_request_response")
-	CreateConVar("libk_transfer_chunk", "16384", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "GLib transfer chunk size in bytes")
-	CreateConVar("libk_transfer_delay_ms", "0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Delay in milliseconds between sending GLib transfer chunks")
 end
 
 local function EndPacket (packet, userId)
@@ -230,23 +228,8 @@ timer.Create ("GLib.Transfers", 1, 0,
 			else
 				local outBuffer = GLib.StringOutBuffer ()
 
-				-- Apply configurable chunk size only before starting the transfer
-				if SERVER then
-					local cs = GetConVar("libk_transfer_chunk"):GetInt()
-					if cs and cs > 0 then
-						pcall(function() outboundTransfer:SetChunkSize(cs) end)
-					end
-				end
-
 				local packet = vnet.CreatePacket("glib_transfer")
 					if not outboundTransfer:IsStarted () then
-						-- Apply configurable chunk size only before starting the transfer
-						if SERVER then
-							local cs = GetConVar("libk_transfer_chunk"):GetInt()
-							if cs and cs > 0 then
-								pcall(function() outboundTransfer:SetChunkSize(cs) end)
-							end
-						end
 						packet:Int(1)
 						packet:Int(outboundTransfer:GetId ())
 						packet:String (outboundTransfer:GetChannelName ())
@@ -258,8 +241,6 @@ timer.Create ("GLib.Transfers", 1, 0,
 					end
 					packet:String (outBuffer:GetString ())
 				EndPacket(packet, outboundTransfer:GetDestinationId ())
-
-                -- Pacing is handled by the timer interval; avoid active waits
 
 				if outboundTransfer:IsFinished () then
 					GLib.Transfers.OutboundTransfers [outboundTransfer:GetDestinationId () .. "/" .. outboundTransfer:GetId ()] = nil
