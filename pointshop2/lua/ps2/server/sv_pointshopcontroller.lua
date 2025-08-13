@@ -145,7 +145,15 @@ function Pointshop2Controller:initializeSlots( ply )
 			--Delay to next frame to clear stack
 			timer.Simple( 0, function( )
 				if item.class:IsValidForServer( Pointshop2.GetCurrentServerId( ) ) then
-					self:startViewWhenValid( "Pointshop2View", "playerEquipItem", player.GetAll( ), ply.kPlayerId, item )
+					local recipients = player.GetAll()
+					local batchSize = 16
+					for i = 1, #recipients, batchSize do
+						local batch = {}
+						for j = i, math.min(i + batchSize - 1, #recipients) do
+							batch[#batch + 1] = recipients[j]
+						end
+						self:startViewWhenValid( "Pointshop2View", "playerEquipItem", batch, ply.kPlayerId, item )
+					end
 					item:OnEquip( )
 				end
 			end )
@@ -586,16 +594,32 @@ function Pointshop2Controller:notifyItemsChanged( itemClassNames, outfitsChanged
 		if outfitsChanged then
 			return outfitsLoadedPromise:Then( function( )
 				-- Send info to players as soon as they received the outfits change
-				return Promise.Map( player.GetAll( ), function( ply ) 
-					return ply.outfitsReceivedPromise:Then( function()
-						self:startView( "Pointshop2View", "updateItemPersistences", ply, updatedPersistences )
-					end )
-				end )
+				local recipients = player.GetAll()
+				local batchSize = 16
+				for i = 1, #recipients, batchSize do
+					local batch = {}
+					for j = i, math.min(i + batchSize - 1, #recipients) do
+						batch[#batch + 1] = recipients[j]
+					end
+					for _, ply in ipairs(batch) do
+						ply.outfitsReceivedPromise:Then( function()
+							self:startView( "Pointshop2View", "updateItemPersistences", ply, updatedPersistences )
+						end )
+					end
+				end
 			end )
 		end
 
 		-- send straight away if no outfit changes
-		self:startView( "Pointshop2View", "updateItemPersistences", player.GetAll(), updatedPersistences )
+		local recipients = player.GetAll()
+		local batchSize = 16
+		for i = 1, #recipients, batchSize do
+			local batch = {}
+			for j = i, math.min(i + batchSize - 1, #recipients) do
+				batch[#batch + 1] = recipients[j]
+			end
+			self:startView( "Pointshop2View", "updateItemPersistences", batch, updatedPersistences )
+		end
 	end )
 end
 
@@ -662,17 +686,25 @@ function Pointshop2Controller:moduleItemsChanged( outfitsChanged )
 		return self:loadDynamicInfo( )
 	end )
 	:Done( function( )
-		for k, v in pairs( player.GetAll( ) ) do
-			Promise.Resolve( )
-			:Then( function( )
-				if outfitsChanged == false then
-					return Promise.Resolve( )
-				end
-				return v.outfitsReceivedPromise
-			end )
-			:Done( function( )
-				self:sendDynamicInfo( v )
-			end )
+		local recipients = player.GetAll()
+		local batchSize = 16
+		for i = 1, #recipients, batchSize do
+			local batch = {}
+			for j = i, math.min(i + batchSize - 1, #recipients) do
+				batch[#batch + 1] = recipients[j]
+			end
+			for _, v in ipairs(batch) do
+				Promise.Resolve( )
+				:Then( function( )
+					if outfitsChanged == false then
+						return Promise.Resolve( )
+					end
+					return v.outfitsReceivedPromise
+				end )
+				:Done( function( )
+					self:sendDynamicInfo( v )
+				end )
+			end
 		end
 	end )
 end
