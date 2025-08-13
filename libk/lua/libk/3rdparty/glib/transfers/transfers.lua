@@ -14,6 +14,7 @@ if SERVER then
 	util.AddNetworkString ("glib_transfer")
 	util.AddNetworkString ("glib_transfer_request")
 	util.AddNetworkString ("glib_transfer_request_response")
+	CreateConVar("libk_transfer_spread_ms", "0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Per-chunk stagger delay in milliseconds to spread GLib transfer load (0=off)")
 end
 
 local function EndPacket (packet, userId)
@@ -222,29 +223,47 @@ timer.Create ("GLib.Transfers", 1, 0,
 			end
 		end
 
+		local spreadMs = 0
+		if SERVER then
+			local cvar = GetConVar("libk_transfer_spread_ms")
+			if cvar then spreadMs = math.max(0, cvar:GetInt()) end
+		end
+
+		local index = 0
 		for _, outboundTransfer in pairs (GLib.Transfers.OutboundTransfers) do
-			if not outboundTransfer:IsDestinationValid () then
-				GLib.Transfers.OutboundTransfers [outboundTransfer:GetDestinationId () .. "/" .. outboundTransfer:GetId ()] = nil
-			else
+			local ot = outboundTransfer
+			local function sendChunk()
+				if not ot:IsDestinationValid () then
+					GLib.Transfers.OutboundTransfers [ot:GetDestinationId () .. "/" .. ot:GetId ()] = nil
+					return
+				end
+
 				local outBuffer = GLib.StringOutBuffer ()
 
 				local packet = vnet.CreatePacket("glib_transfer")
-					if not outboundTransfer:IsStarted () then
+					if not ot:IsStarted () then
 						packet:Int(1)
-						packet:Int(outboundTransfer:GetId ())
-						packet:String (outboundTransfer:GetChannelName ())
-						outboundTransfer:SerializeFirstChunk (outBuffer)
+						packet:Int(ot:GetId ())
+						packet:String (ot:GetChannelName ())
+						ot:SerializeFirstChunk (outBuffer)
 					else
 						packet:Int(2)
-						packet:Int (outboundTransfer:GetId ())
-						outboundTransfer:SerializeNextChunk (outBuffer)
+						packet:Int (ot:GetId ())
+						ot:SerializeNextChunk (outBuffer)
 					end
 					packet:String (outBuffer:GetString ())
-				EndPacket(packet, outboundTransfer:GetDestinationId ())
+				EndPacket(packet, ot:GetDestinationId ())
 
-				if outboundTransfer:IsFinished () then
-					GLib.Transfers.OutboundTransfers [outboundTransfer:GetDestinationId () .. "/" .. outboundTransfer:GetId ()] = nil
+				if ot:IsFinished () then
+					GLib.Transfers.OutboundTransfers [ot:GetDestinationId () .. "/" .. ot:GetId ()] = nil
 				end
+			end
+
+			if spreadMs > 0 then
+				index = index + 1
+				timer.Simple((index - 1) * (spreadMs / 1000), sendChunk)
+			else
+				sendChunk()
 			end
 		end
 	end
