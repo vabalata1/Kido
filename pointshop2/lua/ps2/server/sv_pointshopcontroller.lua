@@ -1,6 +1,25 @@
 Pointshop2Controller = class( "Pointshop2Controller" )
 Pointshop2Controller:include( BaseController )
 
+-- Broadcast batching helper (global)
+function forEachBatchWithDelay(recipients, fn)
+	local batchSize = GetConVar and GetConVar("ps2_batch_size") and math.max(1, GetConVar("ps2_batch_size"):GetInt()) or 16
+	local delayMs = GetConVar and GetConVar("ps2_batch_delay_ms") and math.max(0, GetConVar("ps2_batch_delay_ms"):GetInt()) or 0
+	for i = 1, #recipients, batchSize do
+		local batch = {}
+		for j = i, math.min(i + batchSize - 1, #recipients) do
+			batch[#batch + 1] = recipients[j]
+		end
+		if delayMs > 0 then
+			timer.Simple((i - 1) / batchSize * (delayMs / 1000), function()
+				fn(batch)
+			end)
+		else
+			fn(batch)
+		end
+	end
+end
+
 --Override for access controll
 --returns a promise, resolved if user can do it, rejected with error if he cant
 function Pointshop2Controller:canDoAction( ply, action )
@@ -904,21 +923,3 @@ function Pointshop2Controller:generateModelCache( )
 	resource:GetCompressedData( ) --Force compression now
 end
 Pointshop2Controller:getInstance( ):generateModelCache( )
-
-local function forEachBatchWithDelay(recipients, fn)
-	local batchSize = GetConVar and GetConVar("ps2_batch_size") and math.max(1, GetConVar("ps2_batch_size"):GetInt()) or 16
-	local delayMs = GetConVar and GetConVar("ps2_batch_delay_ms") and math.max(0, GetConVar("ps2_batch_delay_ms"):GetInt()) or 0
-	for i = 1, #recipients, batchSize do
-		local batch = {}
-		for j = i, math.min(i + batchSize - 1, #recipients) do
-			batch[#batch + 1] = recipients[j]
-		end
-		if delayMs > 0 then
-			timer.Simple((i - 1) / batchSize * (delayMs / 1000), function()
-				fn(batch)
-			end)
-		else
-			fn(batch)
-		end
-	end
-end
