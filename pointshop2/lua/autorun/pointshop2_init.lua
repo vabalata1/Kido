@@ -20,6 +20,12 @@ end
 addCsLuaRecursive( "ps2/modules" )
 LibK.AddCSLuaDir( "kinv/items" )
 
+if not LibK then
+	if file.Exists("libk/autorun/_libk_loader.lua", "LUA") then
+		include("libk/autorun/_libk_loader.lua")
+	end
+end
+
 LibK.InitializeAddon{
 	addonName = "Pointshop2",             --Name of the addon
 	author = "Kamshak",                   --Name of the author
