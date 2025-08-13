@@ -146,14 +146,9 @@ function Pointshop2Controller:initializeSlots( ply )
 			timer.Simple( 0, function( )
 				if item.class:IsValidForServer( Pointshop2.GetCurrentServerId( ) ) then
 					local recipients = player.GetAll()
-					local batchSize = GetConVar and GetConVar("ps2_batch_size") and math.max(1, GetConVar("ps2_batch_size"):GetInt()) or 16
-					for i = 1, #recipients, batchSize do
-						local batch = {}
-						for j = i, math.min(i + batchSize - 1, #recipients) do
-							batch[#batch + 1] = recipients[j]
-						end
+					forEachBatchWithDelay(recipients, function(batch)
 						self:startViewWhenValid( "Pointshop2View", "playerEquipItem", batch, ply.kPlayerId, item )
-					end
+					end)
 					item:OnEquip( )
 				end
 			end )
@@ -243,7 +238,10 @@ function Pointshop2Controller:sendDynamicInfo( ply )
 	end
 
 	Pointshop2.DynamicsLoadedPromise:Done( function( )
-		self:startView( "Pointshop2View", "loadDynamics", ply, self.dynamicsResource:GetVersionHash() )
+		local recipients = player.GetAll()
+		forEachBatchWithDelay(recipients, function(batch)
+			self:startView( "Pointshop2View", "loadDynamics", batch, self.dynamicsResource:GetVersionHash() )
+		end)
 	end )
 end
 
@@ -670,16 +668,11 @@ function Pointshop2Controller:moduleItemsChanged( outfitsChanged )
 		
 		outfitsLoadedPromise = self:loadOutfits( ):Then(function()
 			local recipients = player.GetAll()
-			local batchSize = GetConVar and GetConVar("ps2_batch_size") and math.max(1, GetConVar("ps2_batch_size"):GetInt()) or 16
-			for i = 1, #recipients, batchSize do
-				local batch = {}
-				for j = i, math.min(i + batchSize - 1, #recipients) do
-					batch[#batch + 1] = recipients[j]
-				end
+			forEachBatchWithDelay(recipients, function(batch)
 				for _, v in ipairs(batch) do
 					Pointshop2Controller:getInstance( ):SendInitialOutfitPackage( v )
 				end
-			end
+			end)
 		end)
 	end
 
@@ -911,3 +904,21 @@ function Pointshop2Controller:generateModelCache( )
 	resource:GetCompressedData( ) --Force compression now
 end
 Pointshop2Controller:getInstance( ):generateModelCache( )
+
+local function forEachBatchWithDelay(recipients, fn)
+	local batchSize = GetConVar and GetConVar("ps2_batch_size") and math.max(1, GetConVar("ps2_batch_size"):GetInt()) or 16
+	local delayMs = GetConVar and GetConVar("ps2_batch_delay_ms") and math.max(0, GetConVar("ps2_batch_delay_ms"):GetInt()) or 0
+	for i = 1, #recipients, batchSize do
+		local batch = {}
+		for j = i, math.min(i + batchSize - 1, #recipients) do
+			batch[#batch + 1] = recipients[j]
+		end
+		if delayMs > 0 then
+			timer.Simple((i - 1) / batchSize * (delayMs / 1000), function()
+				fn(batch)
+			end)
+		else
+			fn(batch)
+		end
+	end
+end
