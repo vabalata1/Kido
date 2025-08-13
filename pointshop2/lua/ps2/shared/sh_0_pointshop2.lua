@@ -87,17 +87,7 @@ function Pointshop2.AddItemHook( hookName, itemClass )
 	hook.Add(hookName, "PS2_ItemHooks_" .. hookName, function(...)
 		local itemsForThisHook = ITEM_HOOK_LOOKUP[hookName] or {}
 		local toRemove = {}
-
-		local maxPerTick = 0
-		if GetConVar and GetConVar("ps2_throttle_itemhooks") then
-			maxPerTick = math.max(0, tonumber(GetConVar("ps2_throttle_itemhooks"):GetInt()) or 0)
-		end
-
-		local processed = 0
 		for k, item in ipairs(itemsForThisHook) do
-			if maxPerTick > 0 and processed >= maxPerTick then
-				break
-			end
 			-- Owner of the item has disconnected, remove the item from the hook lookup
 			if not IsValid(item:GetOwner()) then
 				toRemove[item] = true
@@ -106,7 +96,6 @@ function Pointshop2.AddItemHook( hookName, itemClass )
 
 			if item[hookName] then
 				item[hookName](item, ...)
-				processed = processed + 1
 			end
 		end
 
