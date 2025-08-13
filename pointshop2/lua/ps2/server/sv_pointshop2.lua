@@ -75,17 +75,11 @@ function Pointshop2.FixDatabase( )
 
 	-- 1.1: Find all hats with broken settings
 	:Then( function( )
-		return Pointshop2.HatPersistence.getAll( 0 )
+		-- Disabled: HatPersistence check removed to avoid errors when persistence is not initialized yet
+		return WhenAllFinished( {} )
 	end )
 	:Then( function( persistentItems )
-		local promises = {}
-		for k, item in pairs( persistentItems ) do
-			if not item.iconInfo.inv or not item.iconInfo.shop then
-				KLogf( 2, "[PS2-FIX] Found hat persistence with invalid icon properties, id %i", item.id )
-				table.insert( promises, Pointshop2.ItemPersistence.removeWhere{ id = item.ItemPersistence.id } )
-			end
-		end
-		return WhenAllFinished( promises, { noUnpack = true } )
+		return WhenAllFinished( {} )
 	end )
 
 	-- 2: Find all items that don't have a valid class (base persistence)
