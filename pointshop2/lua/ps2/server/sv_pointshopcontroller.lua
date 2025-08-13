@@ -146,7 +146,7 @@ function Pointshop2Controller:initializeSlots( ply )
 			timer.Simple( 0, function( )
 				if item.class:IsValidForServer( Pointshop2.GetCurrentServerId( ) ) then
 					local recipients = player.GetAll()
-					local batchSize = 16
+					local batchSize = GetConVar and GetConVar("ps2_batch_size") and math.max(1, GetConVar("ps2_batch_size"):GetInt()) or 16
 					for i = 1, #recipients, batchSize do
 						local batch = {}
 						for j = i, math.min(i + batchSize - 1, #recipients) do
@@ -595,7 +595,7 @@ function Pointshop2Controller:notifyItemsChanged( itemClassNames, outfitsChanged
 			return outfitsLoadedPromise:Then( function( )
 				-- Send info to players as soon as they received the outfits change
 				local recipients = player.GetAll()
-				local batchSize = 16
+				local batchSize = GetConVar and GetConVar("ps2_batch_size") and math.max(1, GetConVar("ps2_batch_size"):GetInt()) or 16
 				for i = 1, #recipients, batchSize do
 					local batch = {}
 					for j = i, math.min(i + batchSize - 1, #recipients) do
@@ -612,7 +612,7 @@ function Pointshop2Controller:notifyItemsChanged( itemClassNames, outfitsChanged
 
 		-- send straight away if no outfit changes
 		local recipients = player.GetAll()
-		local batchSize = 16
+		local batchSize = GetConVar and GetConVar("ps2_batch_size") and math.max(1, GetConVar("ps2_batch_size"):GetInt()) or 16
 		for i = 1, #recipients, batchSize do
 			local batch = {}
 			for j = i, math.min(i + batchSize - 1, #recipients) do
@@ -687,7 +687,7 @@ function Pointshop2Controller:moduleItemsChanged( outfitsChanged )
 	end )
 	:Done( function( )
 		local recipients = player.GetAll()
-		local batchSize = 16
+		local batchSize = GetConVar and GetConVar("ps2_batch_size") and math.max(1, GetConVar("ps2_batch_size"):GetInt()) or 16
 		for i = 1, #recipients, batchSize do
 			local batch = {}
 			for j = i, math.min(i + batchSize - 1, #recipients) do

@@ -209,7 +209,15 @@ function Pointshop2Controller:sellItem( ply, itemId )
 			end )
 		end
 	end):Then( function( )
-		self:startView( "Pointshop2View", "playerUnequipItem", player.GetAll( ), ply, item.id )
+		local recipients = player.GetAll()
+		local batchSize = GetConVar and GetConVar("ps2_batch_size") and math.max(1, GetConVar("ps2_batch_size"):GetInt()) or 16
+		for i = 1, #recipients, batchSize do
+			local batch = {}
+			for j = i, math.min(i + batchSize - 1, #recipients) do
+				batch[#batch + 1] = recipients[j]
+			end
+			self:startView( "Pointshop2View", "playerUnequipItem", batch, ply, item.id )
+		end
 		item:OnHolster( )
 		Pointshop2.DeactivateItemHooks(item)
 		item:OnSold( )
@@ -260,7 +268,15 @@ function Pointshop2Controller:removeItemFromPlayer( ply, item )
 	:Then( function( )
 		item:OnHolster( )
 		Pointshop2.DeactivateItemHooks(item)
-		self:startView( "Pointshop2View", "playerUnequipItem", player.GetAll( ), ply, item.id )
+		local recipients = player.GetAll()
+		local batchSize = GetConVar and GetConVar("ps2_batch_size") and math.max(1, GetConVar("ps2_batch_size"):GetInt()) or 16
+		for i = 1, #recipients, batchSize do
+			local batch = {}
+			for j = i, math.min(i + batchSize - 1, #recipients) do
+				batch[#batch + 1] = recipients[j]
+			end
+			self:startView( "Pointshop2View", "playerUnequipItem", batch, ply, item.id )
+		end
 		return item:remove( ) --remove the actual db entry
 	end ):Then(function()
 		Pointshop2.LogCacheEvent('REMOVE', 'removeItemFromPlayer', itemId)
@@ -327,7 +343,15 @@ function Pointshop2Controller:unequipItem( ply, slotName )
 		Pointshop2.DeactivateItemHooks(item)
 		hook.Run( "PS2_UnEquipItem", ply, item.id )
 
-		self:startView( "Pointshop2View", "playerUnequipItem", player.GetAll( ), ply, item.id )
+		local recipients = player.GetAll()
+		local batchSize = GetConVar and GetConVar("ps2_batch_size") and math.max(1, GetConVar("ps2_batch_size"):GetInt()) or 16
+		for i = 1, #recipients, batchSize do
+			local batch = {}
+			for j = i, math.min(i + batchSize - 1, #recipients) do
+				batch[#batch + 1] = recipients[j]
+			end
+			self:startView( "Pointshop2View", "playerUnequipItem", batch, ply, item.id )
+		end
 		self:startView( "Pointshop2View", "slotChanged", ply, updatedSlot )
 
 		Pointshop2.DB.DoQuery( "COMMIT" )
@@ -441,7 +465,7 @@ function Pointshop2Controller:equipItem( ply, itemId, slotName )
 				item:OnEquip(  )
 				hook.Run( "PS2_EquipItem", ply, item.id, slotsused )
 				local recipients = player.GetAll()
-				local batchSize = 16
+				local batchSize = GetConVar and GetConVar("ps2_batch_size") and math.max(1, GetConVar("ps2_batch_size"):GetInt()) or 16
 				for i = 1, #recipients, batchSize do
 					local batch = {}
 					for j = i, math.min(i + batchSize - 1, #recipients) do

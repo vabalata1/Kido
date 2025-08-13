@@ -4,6 +4,9 @@
 resource.AddWorkshop( "439856500" )
 
 CreateConVar("pointshop2_salt", "{{ user_id | 69 }}", {FCVAR_NOTIFY})
+CreateConVar("ps2_throttle_itemhooks", "0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Max items processed per hook tick for item hooks; 0 disables throttle")
+CreateConVar("ps2_debug_cachelog", "0", {FCVAR_ARCHIVE}, "Enable verbose cache logging to CacheLog.txt")
+CreateConVar("ps2_batch_size", "16", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Batch size for broadcasting Pointshop2 updates to players")
 
 function Pointshop2.ResetDatabase( )
 	local models = {}
@@ -225,5 +228,7 @@ function Pointshop2.BroadcastInfo( text )
 end
 
 function Pointshop2.LogCacheEvent( action, source, itemId, other )
-	file.Append('CacheLog.txt', util.TableToJSON({ action = action, source = source, itemId = itemId, other = other}) .. '\n')
+	if GetConVar and GetConVar("ps2_debug_cachelog") and GetConVar("ps2_debug_cachelog"):GetBool() then
+		file.Append('CacheLog.txt', util.TableToJSON({ action = action, source = source, itemId = itemId, other = other}) .. '\n')
+	end
 end
