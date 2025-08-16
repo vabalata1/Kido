@@ -15,6 +15,7 @@ local DOME_CONFIG = {
 	DEBUG_VISUAL = true,
 	PROP_BARRIER = false,
 	BOUNCE = 0.3,
+	RECOVER_DELAY = 2.0,
 }
 
 local debuff_prefix = "fdsDebuff_"
@@ -32,7 +33,8 @@ function ENT:Initialize()
 		expandStart = 0,
 		contractStart = 0,
 		etat = "expansion",
-		owner = nil
+		owner = nil,
+		recovery = {}
 	}
 	self.joueursData = {}
 	timer.Simple(0.1, function()
@@ -270,22 +272,40 @@ function ENT:EnableDomeMovementBlock()
 		local tangential = vel - normal * vRad
 		local bounce = DOME_CONFIG.BOUNCE or 0.3
 
+		local recMap = selfref.dome.recovery or {}
+		selfref.dome.recovery = recMap
+		local rec = recMap[ply]
+
 		if lockedIn then
-			-- Inside players cannot exit: clamp to inner shell and reflect outward speed inward with restitution
 			if dist > R - eps then
 				mv:SetOrigin(selfref.dome.pos + normal * (R - eps))
 				if vRad > 0 then
 					mv:SetVelocity(tangential - normal * (vRad * bounce))
+					recMap[ply] = { lost = math.abs(vRad), restoreAt = CurTime() + (DOME_CONFIG.RECOVER_DELAY or 2), restored = false }
 				end
 			end
 		else
-			-- Outside players cannot enter: clamp to outer shell and reflect inward speed outward with restitution
 			if dist < R + eps then
 				mv:SetOrigin(selfref.dome.pos + normal * (R + eps))
 				if vRad < 0 then
 					mv:SetVelocity(tangential - normal * (vRad * bounce))
+					recMap[ply] = { lost = math.abs(vRad), restoreAt = CurTime() + (DOME_CONFIG.RECOVER_DELAY or 2), restored = false }
 				end
 			end
+		end
+
+		rec = recMap[ply]
+		if rec and not rec.restored and CurTime() >= rec.restoreAt then
+			local curVel = mv:GetVelocity()
+			local curPos = mv:GetOrigin()
+			local curDir = (curPos - selfref.dome.pos)
+			local curN = curDir:Length() > 0 and curDir:GetNormalized() or normal
+			local curTang = curVel - curN * curVel:Dot(curN)
+			local tLen = curTang:Length()
+			local tDir = tLen > 0 and (curTang / tLen) or curN:Cross(Vector(0,0,1))
+			if tDir:Length() < 0.5 then tDir = curN:Cross(Vector(0,1,0)) end
+			mv:SetVelocity(curVel + tDir:GetNormalized() * rec.lost)
+			rec.restored = true
 		end
 	end)
 end
