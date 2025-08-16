@@ -281,7 +281,13 @@ function ENT:EnableDomeMovementBlock()
 				mv:SetOrigin(selfref.dome.pos + normal * (R - eps))
 				if vRad > 0 then
 					mv:SetVelocity(tangential - normal * (vRad * bounce))
-					recMap[ply] = { lost = math.abs(vRad), restoreAt = CurTime() + (DOME_CONFIG.RECOVER_DELAY or 2), restored = false }
+					local prev = recMap[ply]
+					if prev and not prev.restored then
+						prev.lost = prev.lost + math.abs(vRad)
+						prev.restoreAt = CurTime() + (DOME_CONFIG.RECOVER_DELAY or 2)
+					else
+						recMap[ply] = { lost = math.abs(vRad), restoreAt = CurTime() + (DOME_CONFIG.RECOVER_DELAY or 2), restored = false }
+					end
 				end
 			end
 		else
@@ -289,7 +295,13 @@ function ENT:EnableDomeMovementBlock()
 				mv:SetOrigin(selfref.dome.pos + normal * (R + eps))
 				if vRad < 0 then
 					mv:SetVelocity(tangential - normal * (vRad * bounce))
-					recMap[ply] = { lost = math.abs(vRad), restoreAt = CurTime() + (DOME_CONFIG.RECOVER_DELAY or 2), restored = false }
+					local prev = recMap[ply]
+					if prev and not prev.restored then
+						prev.lost = prev.lost + math.abs(vRad)
+						prev.restoreAt = CurTime() + (DOME_CONFIG.RECOVER_DELAY or 2)
+					else
+						recMap[ply] = { lost = math.abs(vRad), restoreAt = CurTime() + (DOME_CONFIG.RECOVER_DELAY or 2), restored = false }
+					end
 				end
 			end
 		end
@@ -313,6 +325,24 @@ end
 function ENT:DisableDomeMovementBlock()
 	if self.dome and self.dome.hookid then
 		hook.Remove("SetupMove", self.dome.hookid)
+	end
+end
+
+function ENT:RestorePendingRecoveries()
+	if not self.dome or not self.dome.recovery then return end
+	local center = self.dome.pos or self:GetPos()
+	for ply, rec in pairs(self.dome.recovery) do
+		if IsValid(ply) and rec and not rec.restored then
+			local curVel = ply:GetVelocity()
+			local curDir = (ply:GetPos() - center)
+			local curN = curDir:Length() > 0 and curDir:GetNormalized() or Vector(0,0,1)
+			local curTang = curVel - curN * curVel:Dot(curN)
+			local tLen = curTang:Length()
+			local tDir = tLen > 0 and (curTang / tLen) or curN:Cross(Vector(0,0,1))
+			if tDir:Length() < 0.5 then tDir = curN:Cross(Vector(0,1,0)) end
+			ply:SetVelocity(tDir:GetNormalized() * rec.lost)
+			rec.restored = true
+		end
 	end
 end
 
@@ -443,6 +473,7 @@ function ENT:FermerCage()
 			self:NettoyerDonneesJoueur(ply)
 		end
 	end
+	self:RestorePendingRecoveries()
 	self:DisableDomeMovementBlock()
 	self:DestroyPhysicsBarrier()
 	self:DestroyPropBarrierProps()
@@ -636,6 +667,7 @@ function ENT:OnRemove()
 	self:DisableDomeMovementBlock()
 	self:DestroyPhysicsBarrier()
 	self:DestroyPropBarrierProps()
+	self:RestorePendingRecoveries()
 	if not self.joueursData then return end
 	for ply, _ in pairs(self.joueursData) do
 		if IsValid(ply) then
