@@ -62,11 +62,48 @@ function ENT:StartDome()
     local e = EffectData()
     e:SetOrigin(self.dome.pos)
     e:SetScale(DOME_CONFIG.RAYON / 200)
+    self:EnableDomeMovementBlock()
     timer.Simple(DOME_CONFIG.DUREE, function()
         if IsValid(self) then
             self:FermerCage()
         end
     end)
+end
+
+function ENT:EnableDomeMovementBlock()
+    self.dome = self.dome or {}
+    self.dome.hookid = self.dome.hookid or ("DomeFds_Block_" .. self:EntIndex())
+    local hookId = self.dome.hookid
+    local selfref = self
+    hook.Add("SetupMove", hookId, function(ply, mv, cmd)
+        if not IsValid(selfref) then
+            hook.Remove("SetupMove", hookId)
+            return
+        end
+        if not selfref.dome or not selfref.dome.actif then return end
+        if IsValid(selfref.dome.owner) and ply == selfref.dome.owner then return end
+        if not IsValid(ply) or ply:GetMoveType() ~= MOVETYPE_WALK then return end
+        local pos = mv:GetOrigin()
+        local dir = pos - selfref.dome.pos
+        local dist = dir:Length()
+        local radius = DOME_CONFIG.RAYON
+        if dist <= radius then return end
+        local data = selfref.joueursData and selfref.joueursData[ply]
+        if not data or not data.marque then return end
+        local normal = dir:GetNormalized()
+        local newPos = selfref.dome.pos + normal * (radius - 1)
+        mv:SetOrigin(newPos)
+        local vel = mv:GetVelocity()
+        local outward = normal * vel:Dot(normal)
+        local tangential = vel - outward
+        mv:SetVelocity(tangential)
+    end)
+end
+
+function ENT:DisableDomeMovementBlock()
+    if self.dome and self.dome.hookid then
+        hook.Remove("SetupMove", self.dome.hookid)
+    end
 end
 
 function ENT:NettoyerDonneesJoueur(ply)
@@ -95,6 +132,7 @@ function ENT:FermerCage()
             self:NettoyerDonneesJoueur(ply)
         end
     end
+    self:DisableDomeMovementBlock()
     self:Remove()
 end
 
@@ -216,6 +254,7 @@ function ENT:Think()
 end
 
 function ENT:OnRemove()
+    self:DisableDomeMovementBlock()
     if not self.joueursData then return end
     for ply, _ in pairs(self.joueursData) do
         if IsValid(ply) then
