@@ -15,6 +15,7 @@ local DOME_CONFIG = {
 	DEBUG_VISUAL = true,
 	PROP_BARRIER = false,
 	BOUNCE = 1.0,
+	BOUNDARY_PAD = 12,
 }
 
 local debuff_prefix = "fdsDebuff_"
@@ -242,13 +243,12 @@ end
 function ENT:EnableDomeMovementBlock()
 	self.dome = self.dome or {}
 	self.dome.hookid = self.dome.hookid or ("DomeFds_Block_" .. self:EntIndex())
+	self.dome.hookid_finish = self.dome.hookid_finish or ("DomeFds_Block_Finish_" .. self:EntIndex())
 	local hookId = self.dome.hookid
+	local hookFinish = self.dome.hookid_finish
 	local selfref = self
-	hook.Add("SetupMove", hookId, function(ply, mv, cmd)
-		if not IsValid(selfref) then
-			hook.Remove("SetupMove", hookId)
-			return
-		end
+
+	local function clampMove(ply, mv)
 		if not selfref.dome or not selfref.dome.actif then return end
 		if not IsValid(ply) then return end
 		if ply:GetMoveType() == MOVETYPE_NOCLIP then return end
@@ -264,27 +264,18 @@ function ENT:EnableDomeMovementBlock()
 
 		local normal = dir:GetNormalized()
 		local R = (DOME_CONFIG.RAYON or 0)
-		local eps = 4
+		local eps = DOME_CONFIG.BOUNDARY_PAD or 8
 
 		local vel = mv:GetVelocity()
 		local vRad = vel:Dot(normal)
 		local tangential = vel - normal * vRad
-		local bounce = DOME_CONFIG.BOUNCE or 0.3
-
-		local recMap = selfref.dome.recovery or {}
-		selfref.dome.recovery = recMap
-		local prev = recMap[ply]
+		local bounce = DOME_CONFIG.BOUNCE or 1.0
 
 		if lockedIn then
 			if dist > R - eps then
 				mv:SetOrigin(selfref.dome.pos + normal * (R - eps))
 				if vRad > 0 then
 					mv:SetVelocity(tangential - normal * (vRad * bounce))
-					if prev and not prev.restored then
-						prev.lost = (prev.lost or 0) + math.abs(vRad)
-					else
-						recMap[ply] = { lost = math.abs(vRad), restored = false }
-					end
 				end
 			end
 		else
@@ -292,20 +283,28 @@ function ENT:EnableDomeMovementBlock()
 				mv:SetOrigin(selfref.dome.pos + normal * (R + eps))
 				if vRad < 0 then
 					mv:SetVelocity(tangential - normal * (vRad * bounce))
-					if prev and not prev.restored then
-						prev.lost = (prev.lost or 0) + math.abs(vRad)
-					else
-						recMap[ply] = { lost = math.abs(vRad), restored = false }
-					end
 				end
 			end
 		end
+	end
+
+	hook.Add("SetupMove", hookId, function(ply, mv, cmd)
+		if not IsValid(selfref) then hook.Remove("SetupMove", hookId) return end
+		clampMove(ply, mv)
+	end)
+
+	hook.Add("FinishMove", hookFinish, function(ply, mv)
+		if not IsValid(selfref) then hook.Remove("FinishMove", hookFinish) return end
+		clampMove(ply, mv)
 	end)
 end
 
 function ENT:DisableDomeMovementBlock()
 	if self.dome and self.dome.hookid then
 		hook.Remove("SetupMove", self.dome.hookid)
+	end
+	if self.dome and self.dome.hookid_finish then
+		hook.Remove("FinishMove", self.dome.hookid_finish)
 	end
 end
 
