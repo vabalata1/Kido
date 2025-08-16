@@ -62,12 +62,83 @@ function ENT:StartDome()
     local e = EffectData()
     e:SetOrigin(self.dome.pos)
     e:SetScale(DOME_CONFIG.RAYON / 200)
-    self:EnableDomeMovementBlock()
+    self:CreatePhysicsBarrier()
     timer.Simple(DOME_CONFIG.DUREE, function()
         if IsValid(self) then
             self:FermerCage()
         end
     end)
+end
+
+function ENT:CreatePhysicsBarrier()
+    self.barrierSegments = {}
+    local radius = DOME_CONFIG.RAYON
+    local numSegments = 36
+    local height = 180
+    local thickness = 8
+    local center = self.dome.pos
+
+    self.dome.hookid_collide = "DomeFds_ShouldCollide_" .. self:EntIndex()
+    local selfref = self
+    hook.Add("ShouldCollide", self.dome.hookid_collide, function(ent1, ent2)
+        local domeSeg, other = nil, nil
+        if IsValid(ent1) and ent1.IsDomeFDSBarrier and ent1.BarrierParent == selfref then
+            domeSeg = ent1
+            other = ent2
+        elseif IsValid(ent2) and ent2.IsDomeFDSBarrier and ent2.BarrierParent == selfref then
+            domeSeg = ent2
+            other = ent1
+        end
+        if not domeSeg then return end
+        local owner = selfref.dome and selfref.dome.owner
+        if IsValid(owner) and other == owner then
+            return false
+        end
+    end)
+
+    for i = 0, numSegments - 1 do
+        local angDeg = (i / numSegments) * 360
+        local rad = math.rad(angDeg)
+        local normal = Vector(math.cos(rad), math.sin(rad), 0)
+        local chord = 2 * radius * math.sin(math.pi / numSegments)
+        local halfSize = Vector(thickness * 0.5, chord * 0.5, height * 0.5)
+        local pos = center + normal * (radius - halfSize.x) + Vector(0, 0, halfSize.z)
+        local ang = Angle(0, angDeg + 90, 0)
+
+        local seg = ents.Create("base_anim")
+        if not IsValid(seg) then continue end
+        seg:SetPos(pos)
+        seg:SetAngles(ang)
+        seg:SetModel("models/hunter/blocks/cube025x025x025.mdl")
+        seg:SetNoDraw(true)
+        seg:Spawn()
+        seg:Activate()
+        seg:PhysicsInitBox(-halfSize, halfSize)
+        seg:SetSolid(SOLID_VPHYSICS)
+        seg:SetMoveType(MOVETYPE_NONE)
+        seg:SetCollisionGroup(COLLISION_GROUP_NONE)
+        seg:SetNotSolid(false)
+        local phys = seg:GetPhysicsObject()
+        if IsValid(phys) then
+            phys:EnableMotion(false)
+        end
+        seg.IsDomeFDSBarrier = true
+        seg.BarrierParent = self
+        seg:SetParent(self)
+        table.insert(self.barrierSegments, seg)
+    end
+end
+
+function ENT:DestroyPhysicsBarrier()
+    if self.dome and self.dome.hookid_collide then
+        hook.Remove("ShouldCollide", self.dome.hookid_collide)
+        self.dome.hookid_collide = nil
+    end
+    if not self.barrierSegments then return end
+    for _, seg in ipairs(self.barrierSegments) do
+        if IsValid(seg) then seg:Remove() end
+    end
+    self.barrierSegments = nil
 end
 
 function ENT:EnableDomeMovementBlock()
@@ -133,6 +204,7 @@ function ENT:FermerCage()
         end
     end
     self:DisableDomeMovementBlock()
+    self:DestroyPhysicsBarrier()
     self:Remove()
 end
 
@@ -255,6 +327,7 @@ end
 
 function ENT:OnRemove()
     self:DisableDomeMovementBlock()
+    self:DestroyPhysicsBarrier()
     if not self.joueursData then return end
     for ply, _ in pairs(self.joueursData) do
         if IsValid(ply) then
