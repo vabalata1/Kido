@@ -816,8 +816,23 @@ function Pointshop2Controller:removeItem( ply, itemClassName, refund )
 		return removeSingleItem( itemClass, refund )
 	end )
 	:Then( function( )
-		-- Recharge uniquement les dynamiques pour propager la suppression côté clients
-		return self:moduleItemsChanged( false )
+		-- Mettre à jour les caches serveur et informer les clients (sans reload global)
+		KInventory.Items[itemClass.className] = nil
+		for i = # ( self.cachedPersistentItems or {} ), 1, -1 do
+			local v = self.cachedPersistentItems[i]
+			if v and v.itemPersistenceId == itemClass.className then
+				table.remove( self.cachedPersistentItems, i )
+				break
+			end
+		end
+
+		local recipients = player.GetAll()
+		ps2_ForEachBatch(recipients, 16, function(batch)
+			self:startView("Pointshop2View", "removeItemPersistences", batch, { itemClass.className })
+		end)
+
+		-- Rafraîchir silencieusement le package dynamics pour les prochains connectés
+		return self:loadDynamicInfo()
 	end )
 end
 
@@ -878,8 +893,29 @@ function Pointshop2Controller:removeItems( ply, itemClassNames, refund )
 		return WhenAllFinished( dbPromises )
 	end )
 	:Then( function( )
-		-- Recharge uniquement les dynamiques pour propager la suppression côté clients
-		return self:moduleItemsChanged( false )
+		-- Mettre à jour les caches serveur et informer les clients
+		for _, cls in pairs( itemClasses ) do
+			KInventory.Items[cls.className] = nil
+			for i = # ( self.cachedPersistentItems or {} ), 1, -1 do
+				local v = self.cachedPersistentItems[i]
+				if v and v.itemPersistenceId == cls.className then
+					table.remove( self.cachedPersistentItems, i )
+					break
+				end
+			end
+		end
+
+		local removedIds = {}
+		for _, cls in pairs( itemClasses ) do
+			table.insert( removedIds, cls.className )
+		end
+		local recipients = player.GetAll()
+		ps2_ForEachBatch(recipients, 16, function(batch)
+			self:startView("Pointshop2View", "removeItemPersistences", batch, removedIds)
+		end)
+
+		-- Rafraîchir silencieusement le package dynamics pour les prochains connectés
+		return self:loadDynamicInfo()
 	end )
 	:Then( function( )
 		return removedClassNames
