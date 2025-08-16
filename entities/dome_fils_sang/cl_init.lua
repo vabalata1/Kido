@@ -84,6 +84,8 @@ net.Receive("ActivationDomeFilsDeSang", function()
 
         local rayonActuel = clientDome.rayon * progression
         render.SetColorMaterial()
+        -- Wireframe sphere to visualize full physics radius
+        render.DrawWireframeSphere(clientDome.pos, rayonActuel, 24, 24, Color(0, 200, 255, 200), true)
         local segments = 16
         for i = 1, segments do
             if math.random() < 0.2 then
