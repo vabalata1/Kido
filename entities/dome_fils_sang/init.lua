@@ -353,41 +353,68 @@ function ENT:CommencerSaignement(ply)
 end
 
 function ENT:AppliquerCollisionDome(ply)
-    if not IsValid(ply) or not ply:Alive() then return end
-    if not self.dome or not self.dome.actif then return end
-    if ply:GetMoveType() == MOVETYPE_NOCLIP then return end
-    if self.dome.owner and IsValid(self.dome.owner) and ply == self.dome.owner then return end
-    local data = self.joueursData and self.joueursData[ply]
-    if not data or not data.lockedIn then return end
+	if not IsValid(ply) or not ply:Alive() then return end
+	if not self.dome or not self.dome.actif then return end
+	if ply:GetMoveType() == MOVETYPE_NOCLIP then return end
+	if self.dome.owner and IsValid(self.dome.owner) and ply == self.dome.owner then return end
 
-    local centre = self.dome.pos
-    local positionJoueur = ply:GetPos()
-    local vecteurCentreVersJoueur = positionJoueur - centre
-    local distance = vecteurCentreVersJoueur:Length()
-    if distance <= 0.001 then return end
+	local data = self.joueursData and self.joueursData[ply]
+	local lockedIn = data and data.lockedIn or false
 
-    local direction = vecteurCentreVersJoueur:GetNormalized()
-    local rayonAutorise = math.max(0, (DOME_CONFIG.RAYON or 0) - 16)
+	local centre = self.dome.pos
+	local positionJoueur = ply:GetPos()
+	local vecteurCentreVersJoueur = positionJoueur - centre
+	local distance = vecteurCentreVersJoueur:Length()
+	if distance <= 0.001 then return end
 
-    if distance > rayonAutorise then
-        local nouvellePos = centre + direction * rayonAutorise
-        ply:SetPos(nouvellePos)
-        local vitesse = ply:GetVelocity()
-        local vitesseRadiale = vitesse:Dot(direction)
-        if vitesseRadiale > 0 then
-            ply:SetVelocity(-direction * (vitesseRadiale + 50))
-        end
-        return
-    end
+	local direction = vecteurCentreVersJoueur:GetNormalized()
+	local R = (DOME_CONFIG.RAYON or 0)
+	local marge = 16
+	local rayonInterieur = math.max(0, R - marge)
+	local rayonExterieur = R + marge
 
-    if distance > (rayonAutorise - 8) then
-        local vitesse = ply:GetVelocity()
-        local vitesseRadiale = vitesse:Dot(direction)
-        if vitesseRadiale > 0 then
-            local correction = math.min(vitesseRadiale + 50, 300)
-            ply:SetVelocity(-direction * correction)
-        end
-    end
+	if lockedIn then
+		-- Inside players cannot exit
+		if distance > rayonInterieur then
+			local nouvellePos = centre + direction * rayonInterieur
+			ply:SetPos(nouvellePos)
+			local vitesse = ply:GetVelocity()
+			local vRad = vitesse:Dot(direction)
+			if vRad > 0 then
+				ply:SetVelocity(-direction * (vRad + 50))
+			end
+			return
+		end
+		if distance > (rayonInterieur - 8) then
+			local vitesse = ply:GetVelocity()
+			local vRad = vitesse:Dot(direction)
+			if vRad > 0 then
+				local correction = math.min(vRad + 50, 300)
+				ply:SetVelocity(-direction * correction)
+			end
+		end
+	else
+		-- Outside players cannot enter
+		if distance < R then
+			-- Already managed to cross inside: kick back out just beyond the shell
+			local nouvellePos = centre + direction * rayonExterieur
+			ply:SetPos(nouvellePos)
+			local vitesse = ply:GetVelocity()
+			local vDot = vitesse:Dot(direction)
+			if vDot < 0 then
+				ply:SetVelocity(direction * (math.abs(vDot) + 50))
+			end
+			return
+		end
+		if distance < rayonExterieur then
+			local vitesse = ply:GetVelocity()
+			local vDot = vitesse:Dot(direction)
+			if vDot < 0 then
+				local correction = math.min(math.abs(vDot) + 50, 300)
+				ply:SetVelocity(direction * correction)
+			end
+		end
+	end
 end
 
 function ENT:GererJoueurDansDome(ply)
