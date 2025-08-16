@@ -63,7 +63,17 @@ function ENT:StartDome()
     local e = EffectData()
     e:SetOrigin(self.dome.pos)
     e:SetScale(DOME_CONFIG.RAYON / 200)
-    self:CreatePhysicsBarrier()
+    -- Mark only players currently inside as locked-in
+    for _, ply in ipairs(player.GetAll()) do
+        if IsValid(ply) and (not IsValid(self.dome.owner) or ply ~= self.dome.owner) then
+            local dist = ply:GetPos():Distance(self.dome.pos)
+            if dist < DOME_CONFIG.RAYON then
+                local data = self.joueursData[ply] or {}
+                data.lockedIn = true
+                self.joueursData[ply] = data
+            end
+        end
+    end
     timer.Simple(DOME_CONFIG.DUREE, function()
         if IsValid(self) then
             self:FermerCage()
@@ -342,6 +352,44 @@ function ENT:CommencerSaignement(ply)
     TickSaignement()
 end
 
+function ENT:AppliquerCollisionDome(ply)
+    if not IsValid(ply) or not ply:Alive() then return end
+    if not self.dome or not self.dome.actif then return end
+    if ply:GetMoveType() == MOVETYPE_NOCLIP then return end
+    if self.dome.owner and IsValid(self.dome.owner) and ply == self.dome.owner then return end
+    local data = self.joueursData and self.joueursData[ply]
+    if not data or not data.lockedIn then return end
+
+    local centre = self.dome.pos
+    local positionJoueur = ply:GetPos()
+    local vecteurCentreVersJoueur = positionJoueur - centre
+    local distance = vecteurCentreVersJoueur:Length()
+    if distance <= 0.001 then return end
+
+    local direction = vecteurCentreVersJoueur:GetNormalized()
+    local rayonAutorise = math.max(0, (DOME_CONFIG.RAYON or 0) - 16)
+
+    if distance > rayonAutorise then
+        local nouvellePos = centre + direction * rayonAutorise
+        ply:SetPos(nouvellePos)
+        local vitesse = ply:GetVelocity()
+        local vitesseRadiale = vitesse:Dot(direction)
+        if vitesseRadiale > 0 then
+            ply:SetVelocity(-direction * (vitesseRadiale + 50))
+        end
+        return
+    end
+
+    if distance > (rayonAutorise - 8) then
+        local vitesse = ply:GetVelocity()
+        local vitesseRadiale = vitesse:Dot(direction)
+        if vitesseRadiale > 0 then
+            local correction = math.min(vitesseRadiale + 50, 300)
+            ply:SetVelocity(-direction * correction)
+        end
+    end
+end
+
 function ENT:GererJoueurDansDome(ply)
     if not IsValid(ply) or not self.dome or not self.dome.actif then return end
     if self.dome.owner and IsValid(self.dome.owner) and ply == self.dome.owner then
@@ -352,6 +400,17 @@ function ENT:GererJoueurDansDome(ply)
     self.joueursData[ply] = data
     local owner = self.dome.owner
     local debuff_id = debuff_prefix .. (IsValid(owner) and owner:SteamID() or "unknown")
+    -- Only affect players who were inside at activation
+    if not data.lockedIn then
+        -- Ensure any residual debuff is cleared for non-locked players
+        if data.ralenti then
+            if wOS and wOS.RemoveSpeedDebuff then
+                wOS.RemoveSpeedDebuff(ply, debuff_id)
+            end
+            data.ralenti = false
+        end
+        return
+    end
     if dist < DOME_CONFIG.RAYON then
         if not data.marque then
             data.marque = true
@@ -368,11 +427,6 @@ function ENT:GererJoueurDansDome(ply)
                 self:CommencerSaignement(ply)
             end
         end
-        if dist > DOME_CONFIG.RAYON * 0.9 then
-            local direction = (self.dome.pos - ply:GetPos()):GetNormalized()
-            local force = (DOME_CONFIG.RAYON - dist) * 10
-            ply:SetVelocity(direction * force)
-        end
     else
         if data.marque then
             data.marque = false
@@ -383,11 +437,6 @@ function ENT:GererJoueurDansDome(ply)
             end
             data.ralenti = false
         end
-        if dist < DOME_CONFIG.RAYON * 1.1 then
-            local direction = (ply:GetPos() - self.dome.pos):GetNormalized()
-            local force = (DOME_CONFIG.RAYON * 1.1 - dist) * 15
-            ply:SetVelocity(direction * force)
-        end
     end
 end
 
@@ -397,6 +446,7 @@ function ENT:Think()
             self:FermerCage()
         else
             for _, ply in ipairs(player.GetAll()) do
+                self:AppliquerCollisionDome(ply)
                 self:GererJoueurDansDome(ply)
             end
         end
