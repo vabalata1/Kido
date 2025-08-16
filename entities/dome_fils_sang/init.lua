@@ -14,7 +14,7 @@ local DOME_CONFIG = {
 	DEBUFF_AMOUNT = 25,
 	DEBUG_VISUAL = true,
 	PROP_BARRIER = false,
-	BOUNCE = 0.3,
+	BOUNCE = 1.0,
 }
 
 local debuff_prefix = "fdsDebuff_"
@@ -310,21 +310,7 @@ function ENT:DisableDomeMovementBlock()
 end
 
 function ENT:RestorePendingRecoveries()
-	if not self.dome or not self.dome.recovery then return end
-	local center = self.dome.pos or self:GetPos()
-	for ply, rec in pairs(self.dome.recovery) do
-		if IsValid(ply) and rec and not rec.restored then
-			local curVel = ply:GetVelocity()
-			local curDir = (ply:GetPos() - center)
-			local curN = curDir:Length() > 0 and curDir:GetNormalized() or Vector(0,0,1)
-			local curTang = curVel - curN * curVel:Dot(curN)
-			local tLen = curTang:Length()
-			local tDir = tLen > 0 and (curTang / tLen) or curN:Cross(Vector(0,0,1))
-			if tDir:Length() < 0.5 then tDir = curN:Cross(Vector(0,1,0)) end
-			ply:SetVelocity(tDir:GetNormalized() * rec.lost)
-			rec.restored = true
-		end
-	end
+	return
 end
 
 function ENT:NettoyerDonneesJoueur(ply)
