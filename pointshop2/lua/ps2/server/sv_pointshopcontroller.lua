@@ -826,43 +826,101 @@ function Pointshop2Controller:removeItem( ply, itemClassName, refund )
 		return def:Promise( )
 	end
 
-	return removeSingleItem( itemClass )
+	-- Proactivement déséquiper/supprimer les instances de cette classe chez les joueurs en ligne
+	local removalPromises = {}
+	for _, onlinePly in pairs( player.GetAll( ) ) do
+		local itemsToRemove = {}
+
+		if onlinePly.PS2_Inventory and onlinePly.PS2_Inventory.Items then
+			for _, invItem in pairs( onlinePly.PS2_Inventory.Items ) do
+				if invItem.class == itemClass then
+					itemsToRemove[invItem.id] = invItem
+				end
+			end
+		end
+
+		if onlinePly.PS2_Slots then
+			for _, slot in pairs( onlinePly.PS2_Slots ) do
+				if slot.Item and slot.Item.class == itemClass then
+					itemsToRemove[slot.Item.id] = slot.Item
+				end
+			end
+		end
+
+		for _, removeItemInstance in pairs( itemsToRemove ) do
+			table.insert( removalPromises, self:removeItemFromPlayer( onlinePly, removeItemInstance ) )
+		end
+	end
+
+	return WhenAllFinished( removalPromises )
 	:Then( function( )
-		return self:moduleItemsChanged( )
+		return removeSingleItem( itemClass, refund )
 	end )
 	:Then( function( )
-		reloadAllPlayers( )
+		-- Recharge uniquement les dynamiques pour propager la suppression côté clients
+		return self:moduleItemsChanged( false )
 	end )
 end
 
 function Pointshop2Controller:removeItems( ply, itemClassNames, refund )
-	local promises = {}
 	local removedClassNames = {}
+	local itemClasses = {}
 
-	for k, itemClassName in pairs( itemClassNames ) do
-		local promise = Promise.Resolve()
-		:Then( function( )
-			local itemClass = Pointshop2.GetItemClassByName( itemClassName )
-			if not itemClass then
-				return Promise.Reject( "An item " .. itemClassName .. " doesn't exist!" )
-			end
-			return itemClass
-		end )
-		:Then( function( itemClass )
-			return removeSingleItem( itemClass, refund )
-		end )
-		:Then( function( )
-			table.insert( removedClassNames, itemClassName )
-		end )
-		table.insert( promises, promise )
+	-- Résoudre toutes les classes
+	for _, itemClassName in pairs( itemClassNames ) do
+		local cls = Pointshop2.GetItemClassByName( itemClassName )
+		if not cls then
+			return Promise.Reject( "An item " .. itemClassName .. " doesn't exist!" )
+		end
+		table.insert( itemClasses, cls )
 	end
 
-	return WhenAllFinished( promises )
+	-- Proactivement déséquiper/supprimer les instances de ces classes chez les joueurs en ligne
+	local removalPromises = {}
+	for _, onlinePly in pairs( player.GetAll( ) ) do
+		local itemsToRemove = {}
+
+		if onlinePly.PS2_Inventory and onlinePly.PS2_Inventory.Items then
+			for _, invItem in pairs( onlinePly.PS2_Inventory.Items ) do
+				for _, cls in pairs( itemClasses ) do
+					if invItem.class == cls then
+						itemsToRemove[invItem.id] = invItem
+						break
+					end
+				end
+			end
+		end
+
+		if onlinePly.PS2_Slots then
+			for _, slot in pairs( onlinePly.PS2_Slots ) do
+				if slot.Item then
+					for _, cls in pairs( itemClasses ) do
+						if slot.Item.class == cls then
+							itemsToRemove[slot.Item.id] = slot.Item
+							break
+						end
+					end
+				end
+			end
+		end
+
+		for _, removeItemInstance in pairs( itemsToRemove ) do
+			table.insert( removalPromises, self:removeItemFromPlayer( onlinePly, removeItemInstance ) )
+		end
+	end
+
+	return WhenAllFinished( removalPromises )
 	:Then( function( )
-		return self:moduleItemsChanged( )
+		local dbPromises = {}
+		for _, cls in pairs( itemClasses ) do
+			table.insert( dbPromises, removeSingleItem( cls, refund ) )
+			table.insert( removedClassNames, cls.className )
+		end
+		return WhenAllFinished( dbPromises )
 	end )
 	:Then( function( )
-		reloadAllPlayers( )
+		-- Recharge uniquement les dynamiques pour propager la suppression côté clients
+		return self:moduleItemsChanged( false )
 	end )
 	:Then( function( )
 		return removedClassNames
