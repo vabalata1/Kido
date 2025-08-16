@@ -12,6 +12,7 @@ local DOME_CONFIG = {
     DEGATS_MIN = 50,
     DEGATS_MAX = 75,
     DEBUFF_AMOUNT = 25,
+    DEBUG_VISUAL = true,
 }
 
 local debuff_prefix = "fdsDebuff_"
@@ -110,7 +111,7 @@ function ENT:CreatePhysicsBarrier()
         seg:SetPos(pos)
         seg:SetAngles(ang)
         seg:SetModel("models/hunter/blocks/cube025x025x025.mdl")
-        seg:SetNoDraw(true)
+        seg:SetNoDraw(not DOME_CONFIG.DEBUG_VISUAL)
         seg:Spawn()
         seg:Activate()
         seg:PhysicsInitBox(-halfSize, halfSize)
@@ -124,8 +125,17 @@ function ENT:CreatePhysicsBarrier()
         end
         seg.IsDomeFDSBarrier = true
         seg.BarrierParent = self
+        seg._halfSize = halfSize
+        if DOME_CONFIG.DEBUG_VISUAL then
+            seg:SetRenderMode(RENDERMODE_TRANSALPHA)
+            seg:SetColor(Color(255, 0, 0, 90))
+            seg:SetMaterial("models/wireframe")
+        end
         seg:SetParent(self)
         table.insert(self.barrierSegments, seg)
+    end
+    if DOME_CONFIG.DEBUG_VISUAL then
+        self:EnableBarrierDebug()
     end
 end
 
@@ -134,11 +144,45 @@ function ENT:DestroyPhysicsBarrier()
         hook.Remove("ShouldCollide", self.dome.hookid_collide)
         self.dome.hookid_collide = nil
     end
+    self:DisableBarrierDebug()
     if not self.barrierSegments then return end
     for _, seg in ipairs(self.barrierSegments) do
         if IsValid(seg) then seg:Remove() end
     end
     self.barrierSegments = nil
+end
+
+function ENT:EnableBarrierDebug()
+    if not self.dome then self.dome = {} end
+    if self.dome.debugTimer then return end
+    local timerId = "DomeFds_BarrierDebug_" .. self:EntIndex()
+    self.dome.debugTimer = timerId
+    timer.Create(timerId, 0.1, 0, function()
+        if not IsValid(self) then
+            timer.Remove(timerId)
+            return
+        end
+        if not self.dome or not self.dome.actif then return end
+        local center = self.dome.pos
+        local radius = DOME_CONFIG.RAYON
+        debugoverlay.Sphere(center, radius, 0.12, Color(0, 200, 255, 24), true)
+        if not self.barrierSegments then return end
+        for _, seg in ipairs(self.barrierSegments) do
+            if IsValid(seg) and seg._halfSize then
+                local half = seg._halfSize
+                local mins = Vector(-half.x, -half.y, -half.z)
+                local maxs = Vector(half.x, half.y, half.z)
+                debugoverlay.BoxAngles(seg:GetPos(), mins, maxs, seg:GetAngles(), 0.12, Color(255, 0, 0, 8))
+            end
+        end
+    end)
+end
+
+function ENT:DisableBarrierDebug()
+    if self.dome and self.dome.debugTimer then
+        timer.Remove(self.dome.debugTimer)
+        self.dome.debugTimer = nil
+    end
 end
 
 function ENT:EnableDomeMovementBlock()
