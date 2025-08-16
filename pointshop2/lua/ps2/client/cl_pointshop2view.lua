@@ -327,6 +327,45 @@ function Pointshop2View:updateItemPersistences( itemPersistences )
 	end )
 end
 
+/*
+	Called when one or more shop items (item persistences) were removed from the server
+*/
+function Pointshop2View:removeItemPersistences( removedIds )
+	if not self.itemProperties then
+		KLogf(3, "[WARN] Player received item removal but items weren't loaded yet")
+		return
+	end
+
+	-- Purger le cache local des persistences
+	local toRemove = {}
+	for _, removedId in pairs( removedIds ) do
+		for idx, v in ipairs( self.itemProperties ) do
+			if v.itemPersistenceId == removedId then
+				toRemove[idx] = true
+			end
+		end
+		KInventory.Items[removedId] = nil
+	end
+
+	if next(toRemove) then
+		local newProps = {}
+		for idx, v in ipairs( self.itemProperties ) do
+			if not toRemove[idx] then
+				table.insert(newProps, v)
+			end
+		end
+		self.itemProperties = newProps
+	end
+
+	-- Rebuild tree pour refléter la suppression
+	timer.Simple( 0.1, function( )
+		local startTime = SysTime( )
+		self.categoryItemsTable = Pointshop2.BuildTree( self.itemCategories, self.itemMappings ) or {}
+		hook.Call( "PS2_DynamicItemsUpdated" )
+		KLogf( 5, "[Pointshop 2] Removed %i item persistences; tree rebuilt in %s", #removedIds, LibK.GLib.FormatDuration( SysTime() - startTime ) )
+	end )
+end
+
 function Pointshop2View:loadDynamics( versionHash )
 	GLib.Resources.Resources["Pointshop2/dynamics"] = nil --Force resource reset
 	GLib.Resources.Get( "Pointshop2", "dynamics", versionHash, function( success, data )
