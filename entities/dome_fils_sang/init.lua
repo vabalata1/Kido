@@ -14,6 +14,7 @@ local DOME_CONFIG = {
 	DEBUFF_AMOUNT = 25,
 	DEBUG_VISUAL = true,
 	PROP_BARRIER = false,
+	BOUNCE = 0.3,
 }
 
 local debuff_prefix = "fdsDebuff_"
@@ -266,23 +267,23 @@ function ENT:EnableDomeMovementBlock()
 
 		local vel = mv:GetVelocity()
 		local vRad = vel:Dot(normal)
+		local tangential = vel - normal * vRad
+		local bounce = DOME_CONFIG.BOUNCE or 0.3
 
 		if lockedIn then
-			-- Inside players cannot exit
+			-- Inside players cannot exit: clamp to inner shell and reflect outward speed inward with restitution
 			if dist > R - eps then
 				mv:SetOrigin(selfref.dome.pos + normal * (R - eps))
 				if vRad > 0 then
-					local tangential = vel - normal * vRad
-					mv:SetVelocity(tangential)
+					mv:SetVelocity(tangential - normal * (vRad * bounce))
 				end
 			end
 		else
-			-- Outside players cannot enter
+			-- Outside players cannot enter: clamp to outer shell and reflect inward speed outward with restitution
 			if dist < R + eps then
 				mv:SetOrigin(selfref.dome.pos + normal * (R + eps))
 				if vRad < 0 then
-					local tangential = vel - normal * vRad
-					mv:SetVelocity(tangential)
+					mv:SetVelocity(tangential - normal * (vRad * bounce))
 				end
 			end
 		end
