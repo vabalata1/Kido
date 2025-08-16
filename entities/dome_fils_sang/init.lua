@@ -15,7 +15,6 @@ local DOME_CONFIG = {
 	DEBUG_VISUAL = true,
 	PROP_BARRIER = false,
 	BOUNCE = 0.3,
-	RECOVER_DELAY = 2.0,
 }
 
 local debuff_prefix = "fdsDebuff_"
@@ -274,19 +273,17 @@ function ENT:EnableDomeMovementBlock()
 
 		local recMap = selfref.dome.recovery or {}
 		selfref.dome.recovery = recMap
-		local rec = recMap[ply]
+		local prev = recMap[ply]
 
 		if lockedIn then
 			if dist > R - eps then
 				mv:SetOrigin(selfref.dome.pos + normal * (R - eps))
 				if vRad > 0 then
 					mv:SetVelocity(tangential - normal * (vRad * bounce))
-					local prev = recMap[ply]
 					if prev and not prev.restored then
-						prev.lost = prev.lost + math.abs(vRad)
-						prev.restoreAt = CurTime() + (DOME_CONFIG.RECOVER_DELAY or 2)
+						prev.lost = (prev.lost or 0) + math.abs(vRad)
 					else
-						recMap[ply] = { lost = math.abs(vRad), restoreAt = CurTime() + (DOME_CONFIG.RECOVER_DELAY or 2), restored = false }
+						recMap[ply] = { lost = math.abs(vRad), restored = false }
 					end
 				end
 			end
@@ -295,29 +292,13 @@ function ENT:EnableDomeMovementBlock()
 				mv:SetOrigin(selfref.dome.pos + normal * (R + eps))
 				if vRad < 0 then
 					mv:SetVelocity(tangential - normal * (vRad * bounce))
-					local prev = recMap[ply]
 					if prev and not prev.restored then
-						prev.lost = prev.lost + math.abs(vRad)
-						prev.restoreAt = CurTime() + (DOME_CONFIG.RECOVER_DELAY or 2)
+						prev.lost = (prev.lost or 0) + math.abs(vRad)
 					else
-						recMap[ply] = { lost = math.abs(vRad), restoreAt = CurTime() + (DOME_CONFIG.RECOVER_DELAY or 2), restored = false }
+						recMap[ply] = { lost = math.abs(vRad), restored = false }
 					end
 				end
 			end
-		end
-
-		rec = recMap[ply]
-		if rec and not rec.restored and CurTime() >= rec.restoreAt then
-			local curVel = mv:GetVelocity()
-			local curPos = mv:GetOrigin()
-			local curDir = (curPos - selfref.dome.pos)
-			local curN = curDir:Length() > 0 and curDir:GetNormalized() or normal
-			local curTang = curVel - curN * curVel:Dot(curN)
-			local tLen = curTang:Length()
-			local tDir = tLen > 0 and (curTang / tLen) or curN:Cross(Vector(0,0,1))
-			if tDir:Length() < 0.5 then tDir = curN:Cross(Vector(0,1,0)) end
-			mv:SetVelocity(curVel + tDir:GetNormalized() * rec.lost)
-			rec.restored = true
 		end
 	end)
 end
@@ -358,6 +339,9 @@ function ENT:NettoyerDonneesJoueur(ply)
 		timer.Remove("Saignement_" .. sid .. "_" .. self:EntIndex())
 	end
 	self.joueursData[ply] = nil
+	if self.dome and self.dome.recovery then
+		self.dome.recovery[ply] = nil
+	end
 end
 
 function ENT:CreatePropBarrierProps()
