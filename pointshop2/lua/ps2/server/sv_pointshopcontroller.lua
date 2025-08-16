@@ -632,12 +632,53 @@ function Pointshop2Controller:saveModuleItem( ply, saveTable )
 		KLogf( 4, "[Pointshop2] Saved item %s category %s", saveTable.name, targetCategoryId or 'none' )
 		-- Use shortcut path for updates, do a full reload on newly created items
 		if isUpdate then
-			local outfitsChanged = saveTable.baseClass == "base_hat" and saveTable.outfitsChanged
-			return self:notifyItemsChanged( { tostring( saveTable.persistenceId ) }, outfitsChanged )
+		  local outfitsChanged = saveTable.baseClass == "base_hat" and saveTable.outfitsChanged
+		  return self:notifyItemsChanged( { tostring( saveTable.persistenceId ) }, outfitsChanged )
 		else
-			local itemClass = Pointshop2.GetItemClassByName( saved.baseClass )
-			local outfitsChanged = class == KInventory.Items.base_hat or subclassOf( KInventory.Items.base_hat, itemClass )
-			return self:moduleItemsChanged( outfitsChanged )
+		  local itemClass = Pointshop2.GetItemClassByName( saved.baseClass )
+		  local isHat = class == KInventory.Items.base_hat or subclassOf( KInventory.Items.base_hat, itemClass )
+		  if isHat then
+		    return self:moduleItemsChanged( true )
+		  else
+		    return class.getPersistence().findByItemPersistenceId( tostring(saved.itemPersistenceId) )
+		    :Then(function(updatedPersistence)
+		      local replaced = false
+		      for i, v in ipairs(self.cachedPersistentItems or {}) do
+		        if v.itemPersistenceId == updatedPersistence.itemPersistenceId then
+		          self.cachedPersistentItems[i] = updatedPersistence
+		          replaced = true
+		          break
+		        end
+		      end
+		      if not replaced then
+		        self.cachedPersistentItems = self.cachedPersistentItems or {}
+		        table.insert(self.cachedPersistentItems, updatedPersistence)
+		      end
+		
+		      Pointshop2.LoadPersistentItem(updatedPersistence)
+		
+		      local recipients = player.GetAll()
+		      local function ps2_ForEachBatch(recipients, batchSize, fn)
+		        batchSize = batchSize or 16
+		        for i = 1, #recipients, batchSize do
+		          local batch = {}
+		          for j = i, math.min(i + batchSize - 1, #recipients) do
+		            batch[#batch + 1] = recipients[j]
+		          end
+		          fn(batch)
+		        end
+		      end
+		      ps2_ForEachBatch(recipients, 16, function(batch)
+		        self:startView("Pointshop2View", "updateItemPersistences", batch, { updatedPersistence })
+		      end)
+		
+		      return self:loadDynamicInfo():Then(function()
+		        if IsValid(ply) then
+		          self:sendDynamicInfo(ply)
+		        end
+		      end)
+		    end)
+		  end
 		end
 	end):Fail(function( errid, err )
 		self:reportError( "Pointshop2View", ply, "Error saving item", errid, err )
