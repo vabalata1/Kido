@@ -13,7 +13,7 @@ local DOME_CONFIG = {
 	DEGATS_MAX = 75,
 	DEBUFF_AMOUNT = 25,
 	DEBUG_VISUAL = true,
-	PROP_BARRIER = true,
+	PROP_BARRIER = false,
 }
 
 local debuff_prefix = "fdsDebuff_"
@@ -78,7 +78,7 @@ function ENT:StartDome()
 	if DOME_CONFIG.PROP_BARRIER then
 		self:CreatePropBarrierProps()
 	else
-		self:CreatePhysicsBarrier()
+		self:EnableDomeMovementBlock()
 	end
 	timer.Simple(DOME_CONFIG.DUREE, function()
 		if IsValid(self) then
@@ -248,22 +248,44 @@ function ENT:EnableDomeMovementBlock()
 			return
 		end
 		if not selfref.dome or not selfref.dome.actif then return end
+		if not IsValid(ply) then return end
+		if ply:GetMoveType() == MOVETYPE_NOCLIP then return end
 		if IsValid(selfref.dome.owner) and ply == selfref.dome.owner then return end
-		if not IsValid(ply) or ply:GetMoveType() ~= MOVETYPE_WALK then return end
+
+		local data = selfref.joueursData and selfref.joueursData[ply]
+		local lockedIn = data and data.lockedIn or false
+
 		local pos = mv:GetOrigin()
 		local dir = pos - selfref.dome.pos
 		local dist = dir:Length()
-		local radius = DOME_CONFIG.RAYON
-		if dist <= radius then return end
-		local data = selfref.joueursData and selfref.joueursData[ply]
-		if not data or not data.marque then return end
+		if dist <= 0.001 then return end
+
 		local normal = dir:GetNormalized()
-		local newPos = selfref.dome.pos + normal * (radius - 1)
-		mv:SetOrigin(newPos)
+		local R = (DOME_CONFIG.RAYON or 0)
+		local eps = 4
+
 		local vel = mv:GetVelocity()
-		local outward = normal * vel:Dot(normal)
-		local tangential = vel - outward
-		mv:SetVelocity(tangential)
+		local vRad = vel:Dot(normal)
+
+		if lockedIn then
+			-- Inside players cannot exit
+			if dist > R - eps then
+				mv:SetOrigin(selfref.dome.pos + normal * (R - eps))
+				if vRad > 0 then
+					local tangential = vel - normal * vRad
+					mv:SetVelocity(tangential)
+				end
+			end
+		else
+			-- Outside players cannot enter
+			if dist < R + eps then
+				mv:SetOrigin(selfref.dome.pos + normal * (R + eps))
+				if vRad < 0 then
+					local tangential = vel - normal * vRad
+					mv:SetVelocity(tangential)
+				end
+			end
+		end
 	end)
 end
 
@@ -581,9 +603,6 @@ function ENT:Think()
 			self:FermerCage()
 		else
 			for _, ply in ipairs(player.GetAll()) do
-				if not DOME_CONFIG.PROP_BARRIER then
-					self:AppliquerCollisionDome(ply)
-				end
 				self:GererJoueurDansDome(ply)
 			end
 		end
