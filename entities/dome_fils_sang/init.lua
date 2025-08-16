@@ -73,11 +73,11 @@ end
 
 function ENT:CreatePhysicsBarrier()
     self.barrierSegments = {}
-    local radius = DOME_CONFIG.RAYON
-    local numSegments = 36
-    local height = 180
-    local thickness = 8
+    local R = DOME_CONFIG.RAYON
     local center = self.dome.pos
+    local thickness = 8
+    local numLat = 12
+    local numLonBase = 48
 
     self.dome.hookid_collide = "DomeFds_ShouldCollide_" .. self:EntIndex()
     local selfref = self
@@ -97,42 +97,52 @@ function ENT:CreatePhysicsBarrier()
         end
     end)
 
-    for i = 0, numSegments - 1 do
-        local angDeg = (i / numSegments) * 360
-        local rad = math.rad(angDeg)
-        local normal = Vector(math.cos(rad), math.sin(rad), 0)
-        local chord = 2 * radius * math.sin(math.pi / numSegments)
-        local halfSize = Vector(thickness * 0.5, chord * 0.5, height * 0.5)
-        local pos = center + normal * (radius - halfSize.x) + Vector(0, 0, halfSize.z)
-        local ang = Angle(0, angDeg + 90, 0)
+    for j = 1, numLat - 1 do
+        local theta = math.pi * (j / numLat) -- 0..pi
+        local ringR = R * math.sin(theta)
+        local numLon = math.max(12, math.floor(numLonBase * math.sin(theta)))
+        if numLon > 0 and ringR > 0.5 then
+            local arcH = R * (math.pi / numLat)
+            local halfH = math.max(3, arcH * 0.5)
+            local chordW = 2 * ringR * math.sin(math.pi / numLon)
+            local halfW = math.max(3, chordW * 0.5)
+            for i = 0, numLon - 1 do
+                local phi = (2 * math.pi) * (i / numLon)
+                local nx = math.cos(phi) * math.sin(theta)
+                local ny = math.sin(phi) * math.sin(theta)
+                local nz = math.cos(theta)
+                local normal = Vector(nx, ny, nz)
+                local pos = center + normal * (R - thickness * 0.5)
 
-        local seg = ents.Create("base_anim")
-        if not IsValid(seg) then continue end
-        seg:SetPos(pos)
-        seg:SetAngles(ang)
-        seg:SetModel("models/hunter/blocks/cube025x025x025.mdl")
-        seg:SetNoDraw(not DOME_CONFIG.DEBUG_VISUAL)
-        seg:Spawn()
-        seg:Activate()
-        seg:PhysicsInitBox(-halfSize, halfSize)
-        seg:SetSolid(SOLID_VPHYSICS)
-        seg:SetMoveType(MOVETYPE_NONE)
-        seg:SetCollisionGroup(COLLISION_GROUP_NONE)
-        seg:SetNotSolid(false)
-        local phys = seg:GetPhysicsObject()
-        if IsValid(phys) then
-            phys:EnableMotion(false)
+                local seg = ents.Create("base_anim")
+                if not IsValid(seg) then continue end
+                seg:SetPos(pos)
+                seg:SetAngles(normal:Angle())
+                seg:SetModel("models/hunter/blocks/cube025x025x025.mdl")
+                seg:SetNoDraw(not DOME_CONFIG.DEBUG_VISUAL)
+                seg:Spawn()
+                seg:Activate()
+                seg:PhysicsInitBox(Vector(-thickness * 0.5, -halfW, -halfH), Vector(thickness * 0.5, halfW, halfH))
+                seg:SetSolid(SOLID_VPHYSICS)
+                seg:SetMoveType(MOVETYPE_NONE)
+                seg:SetCollisionGroup(COLLISION_GROUP_NONE)
+                seg:SetNotSolid(false)
+                local phys = seg:GetPhysicsObject()
+                if IsValid(phys) then
+                    phys:EnableMotion(false)
+                end
+                seg.IsDomeFDSBarrier = true
+                seg.BarrierParent = self
+                seg._halfSize = Vector(thickness * 0.5, halfW, halfH)
+                if DOME_CONFIG.DEBUG_VISUAL then
+                    seg:SetRenderMode(RENDERMODE_TRANSALPHA)
+                    seg:SetColor(Color(255, 0, 0, 90))
+                    seg:SetMaterial("models/wireframe")
+                end
+                seg:SetParent(self)
+                table.insert(self.barrierSegments, seg)
+            end
         end
-        seg.IsDomeFDSBarrier = true
-        seg.BarrierParent = self
-        seg._halfSize = halfSize
-        if DOME_CONFIG.DEBUG_VISUAL then
-            seg:SetRenderMode(RENDERMODE_TRANSALPHA)
-            seg:SetColor(Color(255, 0, 0, 90))
-            seg:SetMaterial("models/wireframe")
-        end
-        seg:SetParent(self)
-        table.insert(self.barrierSegments, seg)
     end
     if DOME_CONFIG.DEBUG_VISUAL then
         self:EnableBarrierDebug()
