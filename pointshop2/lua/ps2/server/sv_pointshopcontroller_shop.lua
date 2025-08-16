@@ -1,3 +1,16 @@
+if not ps2_ForEachBatch then
+  function ps2_ForEachBatch(recipients, batchSize, fn)
+    batchSize = batchSize or 16
+    for i = 1, #recipients, batchSize do
+      local batch = {}
+      for j = i, math.min(i + batchSize - 1, #recipients) do
+        batch[#batch + 1] = recipients[j]
+      end
+      fn(batch)
+    end
+  end
+end
+
 function Pointshop2Controller:isValidPurchase( ply, itemClassName )
 	local itemClass = Pointshop2.GetItemClassByName( itemClassName )
 	if not itemClass then
