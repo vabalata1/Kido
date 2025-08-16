@@ -72,78 +72,112 @@ function ENT:StartDome()
 end
 
 function ENT:CreatePhysicsBarrier()
-    self.barrierSegments = {}
+    if not self.dome then self.dome = {} end
     local R = DOME_CONFIG.RAYON
-    local center = self.dome.pos
-    local thickness = 8
-    local numLat = 12
-    local numLonBase = 48
+    local thickness = 12
+    local subdiv = 1
+
+    local function addVertex(list, v)
+        local n = v:GetNormalized()
+        table.insert(list, n)
+        return #list
+    end
+    local function midpointIndex(cache, list, i1, i2)
+        local a, b = math.min(i1, i2), math.max(i1, i2)
+        local key = a .. ":" .. b
+        local idx = cache[key]
+        if idx then return idx end
+        local v = (list[i1] + list[i2]) * 0.5
+        idx = addVertex(list, v)
+        cache[key] = idx
+        return idx
+    end
+
+    local verts = {}
+    local faces = {}
+    local phi = (1 + math.sqrt(5)) * 0.5
+    local function av(x, y, z)
+        return addVertex(verts, Vector(x, y, z))
+    end
+    local a = av(-1,  phi, 0)
+    local b = av( 1,  phi, 0)
+    local c = av(-1, -phi, 0)
+    local d = av( 1, -phi, 0)
+    local e = av(0, -1,  phi)
+    local f = av(0,  1,  phi)
+    local g = av(0, -1, -phi)
+    local h = av(0,  1, -phi)
+    local i = av( phi, 0, -1)
+    local j = av( phi, 0,  1)
+    local k = av(-phi, 0, -1)
+    local l = av(-phi, 0,  1)
+
+    faces = {
+        {a,l,f}, {b,f,j}, {c,e,l}, {d,j,e}, {h,a,k}, {h,b,i}, {g,c,k}, {g,d,i},
+        {a,f,b}, {a,b,h}, {c,d,e}, {d,c,g}, {e,j,f}, {h,i,b}, {g,k,c}, {l,a,e},
+        {k,a,h}, {i,h,g}, {j,d,i}, {l,e,f}
+    }
+
+    for _ = 1, subdiv do
+        local cache = {}
+        local newFaces = {}
+        for _, tri in ipairs(faces) do
+            local v1, v2, v3 = tri[1], tri[2], tri[3]
+            local a2 = midpointIndex(cache, verts, v1, v2)
+            local b2 = midpointIndex(cache, verts, v2, v3)
+            local c2 = midpointIndex(cache, verts, v3, v1)
+            table.insert(newFaces, {v1, a2, c2})
+            table.insert(newFaces, {v2, b2, a2})
+            table.insert(newFaces, {v3, c2, b2})
+            table.insert(newFaces, {a2, b2, c2})
+        end
+        faces = newFaces
+    end
+
+    local convexes = {}
+    local halfTh = thickness * 0.5
+    for _, tri in ipairs(faces) do
+        local p1 = verts[tri[1]] * R
+        local p2 = verts[tri[2]] * R
+        local p3 = verts[tri[3]] * R
+        local normal = ((p2 - p1):Cross(p3 - p1)):GetNormalized()
+        local top1 = p1 + normal * halfTh
+        local top2 = p2 + normal * halfTh
+        local top3 = p3 + normal * halfTh
+        local bot1 = p1 - normal * halfTh
+        local bot2 = p2 - normal * halfTh
+        local bot3 = p3 - normal * halfTh
+        table.insert(convexes, {top1, top2, top3, bot1, bot2, bot3})
+    end
+
+    self:PhysicsInitMultiConvex(convexes)
+    self:SetSolid(SOLID_VPHYSICS)
+    self:SetMoveType(MOVETYPE_NONE)
+    self:SetCollisionGroup(COLLISION_GROUP_NONE)
+    self:SetNotSolid(false)
+    self:SetCustomCollisionCheck(true)
+    self:SetCollisionBounds(Vector(-R, -R, -R), Vector(R, R, R))
+    local phys = self:GetPhysicsObject()
+    if IsValid(phys) then
+        phys:EnableMotion(false)
+    end
 
     self.dome.hookid_collide = "DomeFds_ShouldCollide_" .. self:EntIndex()
     local selfref = self
     hook.Add("ShouldCollide", self.dome.hookid_collide, function(ent1, ent2)
-        local domeSeg, other = nil, nil
-        if IsValid(ent1) and ent1.IsDomeFDSBarrier and ent1.BarrierParent == selfref then
-            domeSeg = ent1
+        local other = nil
+        if ent1 == selfref then
             other = ent2
-        elseif IsValid(ent2) and ent2.IsDomeFDSBarrier and ent2.BarrierParent == selfref then
-            domeSeg = ent2
+        elseif ent2 == selfref then
             other = ent1
         end
-        if not domeSeg then return end
+        if not other then return end
         local owner = selfref.dome and selfref.dome.owner
         if IsValid(owner) and other == owner then
             return false
         end
     end)
 
-    for j = 1, numLat - 1 do
-        local theta = math.pi * (j / numLat) -- 0..pi
-        local ringR = R * math.sin(theta)
-        local numLon = math.max(12, math.floor(numLonBase * math.sin(theta)))
-        if numLon > 0 and ringR > 0.5 then
-            local arcH = R * (math.pi / numLat)
-            local halfH = math.max(3, arcH * 0.5)
-            local chordW = 2 * ringR * math.sin(math.pi / numLon)
-            local halfW = math.max(3, chordW * 0.5)
-            for i = 0, numLon - 1 do
-                local phi = (2 * math.pi) * (i / numLon)
-                local nx = math.cos(phi) * math.sin(theta)
-                local ny = math.sin(phi) * math.sin(theta)
-                local nz = math.cos(theta)
-                local normal = Vector(nx, ny, nz)
-                local pos = center + normal * (R - thickness * 0.5)
-
-                local seg = ents.Create("base_anim")
-                if not IsValid(seg) then continue end
-                seg:SetPos(pos)
-                seg:SetAngles(normal:Angle())
-                seg:SetModel("models/hunter/blocks/cube025x025x025.mdl")
-                seg:SetNoDraw(not DOME_CONFIG.DEBUG_VISUAL)
-                seg:Spawn()
-                seg:Activate()
-                seg:PhysicsInitBox(Vector(-thickness * 0.5, -halfW, -halfH), Vector(thickness * 0.5, halfW, halfH))
-                seg:SetSolid(SOLID_VPHYSICS)
-                seg:SetMoveType(MOVETYPE_NONE)
-                seg:SetCollisionGroup(COLLISION_GROUP_NONE)
-                seg:SetNotSolid(false)
-                local phys = seg:GetPhysicsObject()
-                if IsValid(phys) then
-                    phys:EnableMotion(false)
-                end
-                seg.IsDomeFDSBarrier = true
-                seg.BarrierParent = self
-                seg._halfSize = Vector(thickness * 0.5, halfW, halfH)
-                if DOME_CONFIG.DEBUG_VISUAL then
-                    seg:SetRenderMode(RENDERMODE_TRANSALPHA)
-                    seg:SetColor(Color(255, 0, 0, 90))
-                    seg:SetMaterial("models/wireframe")
-                end
-                seg:SetParent(self)
-                table.insert(self.barrierSegments, seg)
-            end
-        end
-    end
     if DOME_CONFIG.DEBUG_VISUAL then
         self:EnableBarrierDebug()
     end
@@ -155,11 +189,12 @@ function ENT:DestroyPhysicsBarrier()
         self.dome.hookid_collide = nil
     end
     self:DisableBarrierDebug()
-    if not self.barrierSegments then return end
-    for _, seg in ipairs(self.barrierSegments) do
-        if IsValid(seg) then seg:Remove() end
+    self:SetSolid(SOLID_NONE)
+    self:SetNotSolid(true)
+    local phys = self:GetPhysicsObject()
+    if IsValid(phys) then
+        phys:EnableMotion(false)
     end
-    self.barrierSegments = nil
 end
 
 function ENT:EnableBarrierDebug()
@@ -176,15 +211,6 @@ function ENT:EnableBarrierDebug()
         local center = self.dome.pos
         local radius = DOME_CONFIG.RAYON
         debugoverlay.Sphere(center, radius, 0.12, Color(0, 200, 255, 24), true)
-        if not self.barrierSegments then return end
-        for _, seg in ipairs(self.barrierSegments) do
-            if IsValid(seg) and seg._halfSize then
-                local half = seg._halfSize
-                local mins = Vector(-half.x, -half.y, -half.z)
-                local maxs = Vector(half.x, half.y, half.z)
-                debugoverlay.BoxAngles(seg:GetPos(), mins, maxs, seg:GetAngles(), 0.12, Color(255, 0, 0, 8))
-            end
-        end
     end)
 end
 
