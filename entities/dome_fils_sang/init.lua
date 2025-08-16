@@ -1,12 +1,13 @@
 AddCSLuaFile("cl_init.lua")
 AddCSLuaFile("shared.lua")
 include('shared.lua')
+
 if SERVER then include("wos/advswl/forcepowers/sh_speedmanager.lua") end
 
 local DOME_CONFIG = {
     RAYON = 800,
     DUREE = 20,
-    EXPANSION = 0.1,
+    EXPANSION = 0.5,
     CONTRACTION = 0.5,
     DEGATS_MIN = 50,
     DEGATS_MAX = 75,
@@ -121,6 +122,7 @@ function ENT:CommencerSaignement(ply)
         saignementData.ticks = saignementData.ticks + 1
         local degats = math.random(DOME_CONFIG.DEGATS_MIN, DOME_CONFIG.DEGATS_MAX)
         ply:TakeDamage(degats)
+        ply:EmitSound("fils_de_sang/FDS_Tic_SFX.mp3", 75, 100)
         local effectData = EffectData()
         effectData:SetOrigin(ply:GetPos() + Vector(0, 0, 50))
         effectData:SetScale(1)
@@ -150,44 +152,6 @@ function ENT:CommencerSaignement(ply)
     TickSaignement()
 end
 
-function ENT:AppliquerCollisionDome(ply)
-    if not IsValid(ply) or not ply:Alive() then return end
-    if not self.dome or not self.dome.actif then return end
-    if ply:GetMoveType() == MOVETYPE_NOCLIP then return end
-    if self.dome.owner and IsValid(self.dome.owner) and ply == self.dome.owner then return end
-
-    local centre = self.dome.pos
-    local positionJoueur = ply:GetPos()
-    local vecteurCentreVersJoueur = positionJoueur - centre
-    local distance = vecteurCentreVersJoueur:Length()
-    if distance <= 0.001 then return end
-
-    local direction = vecteurCentreVersJoueur:GetNormalized()
-
-    local rayonAutorise = math.max(0, (DOME_CONFIG.RAYON or 0) - 16)
-
-    if distance > rayonAutorise then
-        local nouvellePos = centre + direction * rayonAutorise
-        ply:SetPos(nouvellePos)
-
-        local vitesse = ply:GetVelocity()
-        local vitesseRadiale = vitesse:Dot(direction)
-        if vitesseRadiale > 0 then
-            ply:SetVelocity(-direction * (vitesseRadiale + 50))
-        end
-        return
-    end
-
-    if distance > (rayonAutorise - 8) then
-        local vitesse = ply:GetVelocity()
-        local vitesseRadiale = vitesse:Dot(direction)
-        if vitesseRadiale > 0 then
-            local correction = math.min(vitesseRadiale + 50, 300)
-            ply:SetVelocity(-direction * correction)
-        end
-    end
-end
-
 function ENT:GererJoueurDansDome(ply)
     if not IsValid(ply) or not self.dome or not self.dome.actif then return end
     if self.dome.owner and IsValid(self.dome.owner) and ply == self.dome.owner then
@@ -214,6 +178,11 @@ function ENT:GererJoueurDansDome(ply)
                 self:CommencerSaignement(ply)
             end
         end
+        if dist > DOME_CONFIG.RAYON * 0.9 then
+            local direction = (self.dome.pos - ply:GetPos()):GetNormalized()
+            local force = (DOME_CONFIG.RAYON - dist) * 10
+            ply:SetVelocity(direction * force)
+        end
     else
         if data.marque then
             data.marque = false
@@ -224,6 +193,11 @@ function ENT:GererJoueurDansDome(ply)
             end
             data.ralenti = false
         end
+        if dist < DOME_CONFIG.RAYON * 1.1 then
+            local direction = (ply:GetPos() - self.dome.pos):GetNormalized()
+            local force = (DOME_CONFIG.RAYON * 1.1 - dist) * 15
+            ply:SetVelocity(direction * force)
+        end
     end
 end
 
@@ -233,7 +207,6 @@ function ENT:Think()
             self:FermerCage()
         else
             for _, ply in ipairs(player.GetAll()) do
-                self:AppliquerCollisionDome(ply)
                 self:GererJoueurDansDome(ply)
             end
         end
